@@ -1,5 +1,7 @@
 # Unimplemented & Deferred
 
+> As of **v0.1**.
+
 A running register of everything scoped, approved, or attempted but **not** shipped,
 with the reason and what would unblock it. Revisit periodically.
 

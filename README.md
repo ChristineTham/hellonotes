@@ -1,6 +1,6 @@
 # HelloNotes (working name: NoteLens)
 
-> A blazing-fast, local-first, native macOS (and eventually iOS) Markdown knowledge base, synced effortlessly via Git.
+> **v0.1** · A blazing-fast, local-first, native macOS (and iOS) Markdown knowledge base, synced effortlessly via Git.
 
 HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps like Obsidian and cross-platform editors like Typora. It's built strictly on modern Swift — **AppKit + TextKit 2 + SwiftUI** — prioritising high-FPS text rendering, local `.md` files as the absolute source of truth, and seamless background Git synchronisation. **No WebViews. No proprietary database. Your files in Finder *are* the database.**
 
@@ -12,17 +12,18 @@ HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps li
 | [docs/implementation-plan.md](docs/implementation-plan.md) | Milestone-by-milestone build sequence |
 | [docs/unimplemented.md](docs/unimplemented.md) | Deferred / not-yet-built items, with reasons and what would unblock each |
 
-## ✨ Core features (target)
+## ✨ Core features (v0.1)
 - **Local-first** — no CoreData/SwiftData/iCloud store; your `.md` files are the truth.
-- **Live TextKit 2 editor** — Markdown styles as you type (bold, headings, lists, tables, task lists), with native syntax-highlighted code blocks and LaTeX math.
-- **Knowledge graph** — `[[wiki-links]]` with an asynchronous backlink index.
-- **Seamless Git sync** — background, non-blocking commits/pulls via async Swift.
-- **Native Mermaid** — diagrams rendered without a browser engine.
+- **Live TextKit 2 editor** — Markdown styles as you type (bold, headings, lists, tables, task lists), native syntax-highlighted code, LaTeX math, and Mermaid; multi-tab and multi-window editing.
+- **Knowledge graph** — `[[wiki-links]]` with autocomplete, aliases, link-to-heading, backlinks, outgoing links, unlinked mentions, and a native **graph view**.
+- **Organise & find** — full-text search, Open Quickly (⌘O), nested tags, bookmarks, daily notes, templates, and editable typed front-matter **properties**.
+- **Seamless Git sync** — background commits via async Swift, plus per-note **version history** (browse & restore).
+- **No WebViews** — code, math, Mermaid, and the graph all render natively.
 
-See the [PRD](docs/PRD.md) for the full, prioritised feature list.
+See the [PRD](docs/PRD.md) for the full, prioritised feature list, and [unimplemented.md](docs/unimplemented.md) for what's deliberately deferred.
 
-## 🚦 Current status
-Early development. Implemented so far:
+## 🚦 Current status — v0.1
+Shipped (macOS, with an iOS/iPadOS companion). Delivered by milestone:
 - ✅ Vault selection (`NSOpenPanel`) + Markdown indexing; persists across launches.
 - ✅ macOS 3-column shell (`NavigationSplitView`).
 - ✅ **Editing MVP (Milestone 1):** live MarkdownEngine editor, debounced atomic auto-save, create/delete notes, searchable list.
@@ -42,7 +43,7 @@ Roadmap and milestones: [docs/implementation-plan.md](docs/implementation-plan.m
 ## 🏗️ Architecture at a glance
 A strict **4-layer architecture** keeps macOS and iOS sharing everything but the shell:
 1. **Core / Domain** (pure Swift) — file-system vault access, `swift-markdown` AST parsing, `SwiftGitX` Git engine. UI-agnostic, unit-tested.
-2. **State** — the `@Observable` macro *exclusively* (`WorkspaceIndexer`, `EditorModel`, `LinkGraph`).
+2. **State** — the `@Observable` macro *exclusively* (`WorkspaceIndexer`, `EditorModel`/`EditorTabs`, `LinkGraph`, `VaultSearchModel`, `GitService`, `BookmarksStore`).
 3. **Shared UI** — editor host, note rows, backlinks/search components.
 4. **Platform shells** — `NavigationSplitView` (macOS) / `NavigationStack` (iOS) behind `#if os(...)`.
 
@@ -82,14 +83,19 @@ Run the **HelloNotes** scheme, then click **Select Vault Folder** and choose any
 ## 🗂️ Project layout
 ```
 HelloNotes/            App sources (synchronised Xcode group)
-  ├─ Core/             Layer 1 — vault, parsing, git (UI-agnostic)
-  ├─ State/            Layer 2 — @Observable models
-  ├─ UI/               Layer 3 — shared views
-  ├─ MacContentView    Layer 4 — macOS shell
+  ├─ Core/             Layer 1 — pure logic: parsing, front matter, tags,
+  │                     mentions, templates, graph layout, stats, export
+  ├─ State/            Layer 2 — @Observable models (indexer, editor/tabs,
+  │                     link graph, search, git, bookmarks)
+  ├─ UI/               Layer 3 — shared views (editor, properties, outline,
+  │                     history, graph, completion, palette, tree rows)
+  ├─ MacContentView    Layer 4 — macOS 3-column shell
+  ├─ iOSContentView    Layer 4 — iOS/iPadOS adaptive shell
+  ├─ HelloNotesApp     App entry (main + note windows)
   ├─ Note.swift        Core model
   └─ WorkspaceIndexer  Vault state
-docs/                  PRD, architecture, implementation plan
-HelloNotesTests/       Unit tests
+docs/                  PRD, architecture, implementation plan, unimplemented
+HelloNotesTests/       Unit tests (32)
 HelloNotes.xcodeproj/  Project (SPM dependencies)
 ```
 

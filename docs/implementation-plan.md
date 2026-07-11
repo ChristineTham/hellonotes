@@ -1,8 +1,10 @@
 # HelloNotes — Implementation Plan
 
-> Status: **Draft v1** · Last updated: 2026-07-11 · Companion to [PRD.md](PRD.md) and [architecture.md](architecture.md)
+> Status: **v0.1 shipped (Milestones 0–9)** · Last updated: 2026-07-11 · Companion to [PRD.md](PRD.md) and [architecture.md](architecture.md)
 
 Milestone-based build sequence. Each milestone ends with a **green build** (`xcodebuild … build` → 0 errors) and, where noted, tests. Priorities map to the PRD (P0 = MVP).
+
+> **v0.1 = Milestones 0–9**, all ✅ done: foundation, editing MVP, knowledge graph & math, search & navigation, Git sync, native rendering, iOS/iPadOS shell, writing companions (Lettera-inspired), organization & navigation (Bear-inspired), and core knowledge-base features (Obsidian-inspired). Builds clean on macOS + iOS; **32 unit tests** pass. Deferred items and their rationale live in [unimplemented.md](unimplemented.md).
 
 ---
 

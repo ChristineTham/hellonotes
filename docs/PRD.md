@@ -1,6 +1,6 @@
 # HelloNotes — Product Requirements Document
 
-> Working product name: **NoteLens** · Status: **Draft v1 (MVP definition)** · Last updated: 2026-07-11 · Owner: Chris Tham
+> Working product name: **NoteLens** · Status: **v0.1 (shipped — MVP + fast-follow)** · Last updated: 2026-07-11 · Owner: Chris Tham
 
 ---
 
@@ -70,7 +70,16 @@ Where we **diverge**: HelloNotes adds the *knowledge-graph* layer (wiki-links + 
 
 ## 7. Feature requirements
 
-Priority: **P0 = MVP (v0.1)**, **P1 = fast-follow (v0.2–0.3)**, **P2 = roadmap**.
+Priority: **P0 = MVP**, **P1 = fast-follow**, **P2 = roadmap**. **v0.1 shipped P0–P2** across the board on macOS (see the status box below and [implementation-plan.md](implementation-plan.md)).
+
+> ### ✅ Implementation status — v0.1 (shipped)
+> **Vault & files:** vault selection + persistent bookmark, Markdown indexing, create/delete (to Trash), nested folder tree with sort, external-change detection + conflict handling, image paste → `assets/`.
+> **Editor:** live TextKit 2 Markdown (bold/italic/code, headings, lists, task lists, quotes, tables, footnotes), debounced atomic autosave + saved indicator, syntax-highlighted code, LaTeX math, native Mermaid preview, multi-tab editing, open-in-new-window, document statistics, read-only outline, HTML/PDF export, editable typed **properties** (front matter).
+> **Knowledge graph:** `[[wiki-links]]` (clickable, create-on-miss) with **autocomplete**, **aliases**, **link-to-heading** completion, backlinks + **outgoing links** + **unlinked mentions** (one-click link), native **graph view**.
+> **Search & nav:** title filter, full-text search with snippets, Open Quickly (⌘O) over notes/headings/aliases, tags + **nested tags** tree, **bookmarks**, **daily notes** + **templates**.
+> **Git:** repo status, init, local commit, opt-in auto-commit, push/fetch, per-note **version history** (browse + restore).
+> **Platform:** macOS 3-column shell; iOS/iPadOS adaptive shell (browse/read/plain-text-edit companion sharing Core/State).
+> **Deferred** (engine walls / roadmap): heading scroll on link click, note transclusion `![[…]]`, callouts, comments, tag autocomplete, pull/merge, richer iOS editor — see [unimplemented.md](unimplemented.md).
 
 ### 7.1 Vault & file management
 - **P0** Select a vault folder; remember it across launches (security-scoped bookmark).
@@ -141,8 +150,9 @@ Three-column macOS layout:
 - Every code change must compile clean (0 errors) before it's considered done.
 
 ## 12. Open questions
-1. **Preview model:** full source⇄preview toggle, or always-live inline styling (MarkdownEngine leans live)? *Leaning live-inline for MVP.*
-2. **Auto-commit cadence:** time-based, on-close, or on explicit action? *Leaning debounced + manual for v0.2.*
-3. **Wiki-link create-on-miss:** which folder do new linked notes land in?
-4. **Extensibility:** do we ever want a plugin surface, or hold Vellum's "pure editor" line?
-5. **iOS timing:** how much Core/State can we keep truly platform-agnostic to make the iOS shell cheap later?
+1. **Preview model:** ✅ *Resolved* — always-live inline styling (MarkdownEngine). No source/preview toggle.
+2. **Auto-commit cadence:** ✅ *Resolved* — opt-in debounced auto-commit plus a manual Commit/Sync; never auto-pushes.
+3. **Wiki-link create-on-miss:** ✅ *Resolved (v0.1)* — new linked notes are created in the vault root. (Configurable location is a possible later refinement.)
+4. **Extensibility:** *Open* — still holding Vellum's "pure editor" line; no plugin surface in v0.1.
+5. **iOS timing:** ✅ *Largely resolved* — Core/State are platform-agnostic and shared; iOS ships as a browse/read/plain-text-edit companion. A rich iOS editor remains future work (see [unimplemented.md](unimplemented.md)).
+6. **Heading navigation & embeds:** *Open (blocked)* — scroll-to-heading and `![[transclusion]]` need MarkdownEngine hooks it doesn't expose; tracked in [unimplemented.md](unimplemented.md).
