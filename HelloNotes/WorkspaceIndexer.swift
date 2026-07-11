@@ -87,8 +87,76 @@ final class WorkspaceIndexer {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
+        setVault(url)
+        #endif
+    }
+
+    /// Adopt a vault folder: remember it for next launch and index it.
+    func setVault(_ url: URL) {
+        selectedVaultURL = url
+        persistVaultBookmark(for: url)
+        scanVault()
+    }
+
+    // MARK: - File operations
+
+    /// Create a new empty Markdown note in the vault and return it. The
+    /// filename is derived from `title`, disambiguated if it already exists.
+    @discardableResult
+    func createNote(title: String = "Untitled") -> Note? {
+        guard let vaultURL = selectedVaultURL else { return nil }
+
+        let fileManager = FileManager.default
+        let base = title.isEmpty ? "Untitled" : title
+        var candidate = vaultURL.appendingPathComponent("\(base).md")
+        var counter = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = vaultURL.appendingPathComponent("\(base) \(counter).md")
+            counter += 1
+        }
+
+        do {
+            try Data().write(to: candidate, options: .withoutOverwriting)
+        } catch {
+            return nil
+        }
+
+        scanVault()
+        return notes.first { $0.fileURL == candidate }
+    }
+
+    /// Move a note to the Trash (never a hard delete) and re-index.
+    func deleteNote(_ note: Note) {
+        try? FileManager.default.trashItem(at: note.fileURL, resultingItemURL: nil)
+        scanVault()
+    }
+
+    // MARK: - Vault persistence (security-scoped bookmark)
+
+    private static let bookmarkDefaultsKey = "vaultBookmark"
+
+    /// Resolve and re-open the previously selected vault, if any. Call once at launch.
+    func restoreVault() {
+        guard let data = UserDefaults.standard.data(forKey: Self.bookmarkDefaultsKey) else { return }
+        var isStale = false
+        guard let url = try? URL(
+            resolvingBookmarkData: data,
+            options: [],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else { return }
+
         selectedVaultURL = url
         scanVault()
-        #endif
+
+        // Refresh a stale bookmark so it keeps resolving after the folder moves.
+        if isStale {
+            persistVaultBookmark(for: url)
+        }
+    }
+
+    private func persistVaultBookmark(for url: URL) {
+        guard let data = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) else { return }
+        UserDefaults.standard.set(data, forKey: Self.bookmarkDefaultsKey)
     }
 }

@@ -1,64 +1,89 @@
-# HelloNotes (Project Name: NoteLens)
+# HelloNotes (working name: NoteLens)
 
-> A blazing-fast, local-first, native macOS (and eventually iOS) Markdown knowledge graph, synced effortlessly via Git.
+> A blazing-fast, local-first, native macOS (and eventually iOS) Markdown knowledge base, synced effortlessly via Git.
 
-## 🎯 Intent and Purpose
-HelloNotes is designed to be a native Apple ecosystem alternative to Electron-based knowledge management apps like Obsidian. It is built strictly on modern Swift, prioritizing 120 FPS text rendering, local-first file directories as the absolute source of truth, and seamless, invisible Git synchronization. 
+HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps like Obsidian and cross-platform editors like Typora. It's built strictly on modern Swift — **AppKit + TextKit 2 + SwiftUI** — prioritising high-FPS text rendering, local `.md` files as the absolute source of truth, and seamless background Git synchronisation. **No WebViews. No proprietary database. Your files in Finder *are* the database.**
 
-Instead of treating the Mac as an afterthought, HelloNotes utilizes AppKit and TextKit 2 to deliver a true, tactile macOS experience, featuring live Markdown toggling, bidirectional linking, and native performance.
+## 📚 Documentation
+| Doc | What's in it |
+|---|---|
+| [docs/PRD.md](docs/PRD.md) | Product vision, users, MVP scope, roadmap, success metrics |
+| [docs/architecture.md](docs/architecture.md) | 4-layer architecture + evaluation of every Swift package (alternatives & recommendations) |
+| [docs/implementation-plan.md](docs/implementation-plan.md) | Milestone-by-milestone build sequence |
 
-## ✨ Core Features
-*   **Local-First Architecture:** No proprietary databases (no CoreData/SwiftData). Your `.md` files in Finder *are* the database.
-*   **Seamless Git Sync:** Background, non-blocking commits and pulls directly to GitHub/GitLab using in-process Swift concurrency.
-*   **TextKit 2 Editor:** A native AppKit editor that dynamically toggles between "Source Code" mode (`**bold**`) and "Live Preview" mode (Rich Text) based on cursor position.
-*   **Bidirectional Knowledge Graph:** Asynchronous parsing of `[[wiki-links]]` to build an instantaneous backlink index.
-*   **Native Mermaid Diagrams:** Renders complex `.mermaid` code blocks directly into native SVGs/CoreGraphics—no WebViews allowed.
+## ✨ Core features (target)
+- **Local-first** — no CoreData/SwiftData/iCloud store; your `.md` files are the truth.
+- **Live TextKit 2 editor** — Markdown styles as you type (bold, headings, lists, tables, task lists), with native syntax-highlighted code blocks and LaTeX math.
+- **Knowledge graph** — `[[wiki-links]]` with an asynchronous backlink index.
+- **Seamless Git sync** — background, non-blocking commits/pulls via async Swift.
+- **Native Mermaid** — diagrams rendered without a browser engine.
 
----
+See the [PRD](docs/PRD.md) for the full, prioritised feature list.
 
-## 🏗️ Architectural Blueprint
+## 🚦 Current status
+Early development. Implemented so far:
+- ✅ Vault selection (`NSOpenPanel`) and Markdown file indexing (`WorkspaceIndexer`, `@Observable`).
+- ✅ macOS 3-column shell (`NavigationSplitView`).
+- 🚧 **Editing MVP (Milestone 1):** live editor (MarkdownEngine), auto-save, create/delete notes, vault persistence — in progress.
 
-To ensure scalability from macOS to iOS, the codebase follows a strict **4-Layer Architecture** avoiding the "share everything" SwiftUI trap.
+Roadmap and milestones: [docs/implementation-plan.md](docs/implementation-plan.md).
 
-1.  **Core / Domain (Pure Swift):** Handles Git file-system syncing (`SwiftGitX`) and background AST text parsing (`swift-markdown`). Agnostic to any UI.
-2.  **State Management:** Uses the modern Swift `@Observable` macro exclusively. A global `WorkspaceIndexer` tracks file directories and provides unified state.
-3.  **Shared UI Components:** Reusable buttons, markdown token styling modifiers, and text view wrappers.
-4.  **Platform-Specific Shells:**
-    *   `#if os(macOS)`: Utilizes `NavigationSplitView` for a classic 3-column desktop layout (Sidebar, Notes List, Editor).
-    *   `#if os(iOS)`: Utilizes `NavigationStack` for a push-based mobile interface.
+## 🏗️ Architecture at a glance
+A strict **4-layer architecture** keeps macOS and iOS sharing everything but the shell:
+1. **Core / Domain** (pure Swift) — file-system vault access, `swift-markdown` AST parsing, `SwiftGitX` Git engine. UI-agnostic, unit-tested.
+2. **State** — the `@Observable` macro *exclusively* (`WorkspaceIndexer`, `EditorModel`, `LinkGraph`).
+3. **Shared UI** — editor host, note rows, backlinks/search components.
+4. **Platform shells** — `NavigationSplitView` (macOS) / `NavigationStack` (iOS) behind `#if os(...)`.
 
----
+Full detail, data flow, and concurrency model: [docs/architecture.md](docs/architecture.md).
 
-## 📦 Tech Stack & Swift Packages
+## 📦 Tech stack & Swift packages
+Swift Package Manager, native Apple frameworks, **zero WebView/Electron dependencies**.
 
-This project relies on Swift Package Manager (SPM) and strict Native Apple Frameworks. **Zero WebViews or Electron runtime dependencies.**
+**Apple frameworks:** SwiftUI · AppKit / TextKit 2 · UniformTypeIdentifiers · libgit2 (via SwiftGitX)
 
-### Native Apple Frameworks
-*   `SwiftUI` (App lifecycle and layout routing)
-*   `AppKit` / `TextKit 2` (High-performance text layout via `NSTextView`)
-*   `UniformTypeIdentifiers` (System-level recognition of `.md` files)
+**Packages** (see [architecture.md §5](docs/architecture.md#5-package-evaluation) for the evaluation of each vs its alternatives):
 
-### Open-Source Swift Packages
-Add these dependencies in Xcode via **Project Settings > Package Dependencies**:
+| Package | Role |
+|---|---|
+| [swift-markdown-engine](https://github.com/nodes-app/swift-markdown-engine) | Live TextKit 2 Markdown editor (`NativeTextViewWrapper`) + code/LaTeX bridges |
+| [swift-markdown](https://github.com/swiftlang/swift-markdown) | Apple's GFM AST parser (links, headings, tags) |
+| [SwiftGitX](https://github.com/ibrahimcetin/SwiftGitX) | Async/await Git engine over libgit2 |
+| [beautiful-mermaid-swift](https://github.com/lukilabs/beautiful-mermaid-swift) | Native Mermaid diagram rendering |
+| HighlighterSwift · SwiftMath | Code highlighting & math, via the MarkdownEngine bridges |
 
-1.  **AST Parser:** `https://github.com/swiftlang/swift-markdown.git`
-    *   *Purpose:* Apple's official background parser for GFM (GitHub Flavored Markdown) and AST tree generation.
-2.  **TextKit 2 Renderer:** `https://github.com/nodes-app/swift-markdown-engine.git`
-    *   *Purpose:* The native AppKit `NSTextView` wrapper optimized for SwiftUI, enabling live markdown token rendering.
-3.  **Git Engine:** `https://github.com/ibrahimcetin/SwiftGitX.git`
-    *   *Purpose:* The modern Swift async wrapper for `libgit2`. Replaces older broken packages to allow safe background commits and pulls.
-4.  **Mermaid Diagrams:** `https://github.com/lukilabs/beautiful-mermaid-swift.git`
-    *   *Purpose:* Parses Mermaid syntax into native SVGs instantly without loading a browser engine.
+## 🚀 Build & run
+Requirements: **macOS 14+**, **Xcode 26+** (Swift 5.10+).
 
----
-
-## 🚀 Development Setup (Xcode + AI Agent)
-
-This repository is optimized for **Agentic Coding** using Xcode 26+ and Claude Code / Claude Desktop. 
-
-### 1. Initialize the Workspace
 ```bash
-# Clone or create the directory
-mkdir HelloNotes && cd HelloNotes
-git init
-curl -s [https://raw.githubusercontent.com/github/gitignore/main/Swift.gitignore](https://raw.githubusercontent.com/github/gitignore/main/Swift.gitignore) -o .gitignore
+git clone https://github.com/ChristineTham/hellonotes.git
+cd hellonotes
+
+# Open in Xcode (SPM dependencies resolve automatically on first open)
+open HelloNotes.xcodeproj
+
+# …or build from the command line
+xcodebuild -project HelloNotes.xcodeproj -scheme HelloNotes -destination 'platform=macOS' build
+```
+
+Run the **HelloNotes** scheme, then click **Select Vault Folder** and choose any directory of Markdown files.
+
+## 🗂️ Project layout
+```
+HelloNotes/            App sources (synchronised Xcode group)
+  ├─ Core/             Layer 1 — vault, parsing, git (UI-agnostic)
+  ├─ State/            Layer 2 — @Observable models
+  ├─ UI/               Layer 3 — shared views
+  ├─ MacContentView    Layer 4 — macOS shell
+  ├─ Note.swift        Core model
+  └─ WorkspaceIndexer  Vault state
+docs/                  PRD, architecture, implementation plan
+HelloNotesTests/       Unit tests
+HelloNotes.xcodeproj/  Project (SPM dependencies)
+```
+
+## 🤝 Contributing / working rules
+Project conventions live in [CLAUDE.md](CLAUDE.md): macOS 14+ / Swift 5.10+ / Xcode 26; `@Observable` only (no `ObservableObject`/`StateObject`); no CoreData/SwiftData; Git via SwiftGitX; every change must build clean (0 errors) before it's done.
+
+## 📄 License
+See [LICENSE](LICENSE).

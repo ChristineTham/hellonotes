@@ -9,14 +9,17 @@ import Foundation
 import UniformTypeIdentifiers
 
 /// A lightweight value type representing a single Markdown file on disk.
+///
+/// Identity is the file's URL: a note *is* its file, so the URL is stable
+/// across re-indexing (unlike a random `UUID`, which would break list
+/// selection every time the vault is rescanned).
 struct Note: Identifiable, Hashable {
-    let id: UUID
+    var id: URL { fileURL }
     var title: String
     var fileURL: URL
     var lastModified: Date
 
-    init(id: UUID = UUID(), title: String, fileURL: URL, lastModified: Date) {
-        self.id = id
+    init(title: String, fileURL: URL, lastModified: Date) {
         self.title = title
         self.fileURL = fileURL
         self.lastModified = lastModified
