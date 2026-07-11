@@ -60,8 +60,9 @@ we'd need. Several features have been shaped around these walls.
   a `MermaidDiagramRenderer` (BeautifulMermaid) so standalone ` ```mermaid ` blocks now render
   as native images **inline in the editor**, collapsing the fence like block LaTeX. The caret
   reveals the source for editing and re-renders on blur. Verified live. The Diagrams sheet
-  remains as a full-size gallery. *(Follow-ups: theme-match the diagram to light/dark, and clamp
-  very wide diagrams to the reading width — the engine has a scrollable-block mode we don't use yet.)*
+  remains as a full-size gallery. Diagrams now **theme-match** the editor (transparent
+  background + zinc light/dark) and **wide diagrams clamp to the reading column** with a
+  horizontal scroller (the engine's scrollable-block overlay). Both verified live.
 
 - 🧱 **Hiding raw front matter in the editor** *(Milestone 5)*
   The leading `---` YAML block renders as plain text in the editor; we show a separate
