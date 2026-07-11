@@ -22,9 +22,11 @@ See the [PRD](docs/PRD.md) for the full, prioritised feature list.
 
 ## 🚦 Current status
 Early development. Implemented so far:
-- ✅ Vault selection (`NSOpenPanel`) and Markdown file indexing (`WorkspaceIndexer`, `@Observable`).
+- ✅ Vault selection (`NSOpenPanel`) + Markdown indexing; persists across launches.
 - ✅ macOS 3-column shell (`NavigationSplitView`).
-- 🚧 **Editing MVP (Milestone 1):** live editor (MarkdownEngine), auto-save, create/delete notes, vault persistence — in progress.
+- ✅ **Editing MVP (Milestone 1):** live MarkdownEngine editor, debounced atomic auto-save, create/delete notes, searchable list.
+- ✅ **Knowledge graph & math (Milestone 2):** clickable `[[wiki-links]]` (existing vs broken), a backlinks panel, native LaTeX, and syntax-highlighted code.
+- 🚧 Next (Milestone 3): full-text search, "Open Quickly", folder tree, external-change detection.
 
 Roadmap and milestones: [docs/implementation-plan.md](docs/implementation-plan.md).
 

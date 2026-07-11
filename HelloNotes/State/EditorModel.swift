@@ -24,6 +24,10 @@ final class EditorModel {
     /// The most recent save failure, surfaced to the UI (nil when healthy).
     private(set) var saveError: String?
 
+    /// Increments after every successful write. Observers (e.g. the link graph)
+    /// use it to know a note's contents changed on disk.
+    private(set) var savedRevision = 0
+
     /// The live editing buffer bound to the text view. Mutations schedule a
     /// debounced save — except while we are programmatically replacing the
     /// text during a load, which must not mark the buffer dirty.
@@ -87,6 +91,7 @@ final class EditorModel {
             lastSavedText = snapshot
             isDirty = (text != lastSavedText)
             saveError = nil
+            savedRevision += 1
         } catch {
             saveError = error.localizedDescription
         }

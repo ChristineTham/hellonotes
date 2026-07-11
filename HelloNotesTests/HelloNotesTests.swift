@@ -143,4 +143,51 @@ struct HelloNotesTests {
         #expect(first.fileURL.lastPathComponent == "Untitled.md")
         #expect(second.fileURL.lastPathComponent == "Untitled 2.md")
     }
+
+    // MARK: - MarkdownParsing
+
+    @Test
+    func extractsWikiLinkTargets() {
+        let text = "See [[Welcome]] and [[Project Ideas|ideas]] plus [[Notes#Section]]. Ignore ![[img.png]]."
+        let targets = MarkdownParsing.wikiLinkTargets(in: text)
+        // Alias stripped, heading suffix stripped, image embed (`![[ ]]`) excluded.
+        #expect(targets == ["Welcome", "Project Ideas", "Notes"])
+    }
+
+    @Test
+    func extractsHeadingsAndTags() {
+        let text = "# Title\n\nBody #alpha and #beta/child.\n\n## Sub"
+        let headings = MarkdownParsing.headings(in: text)
+        #expect(headings == [
+            DocumentHeading(level: 1, title: "Title"),
+            DocumentHeading(level: 2, title: "Sub"),
+        ])
+        #expect(MarkdownParsing.tags(in: text) == ["alpha", "beta/child"])
+    }
+
+    // MARK: - LinkGraph
+
+    @Test @MainActor
+    func backlinksResolveAcrossNotes() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        let welcome = vault.appendingPathComponent("Welcome.md")
+        let ideas = vault.appendingPathComponent("Ideas.md")
+        try write("# Welcome\n\nNothing links here yet.", to: welcome)
+        try write("# Ideas\n\nThoughts about [[Welcome]] and [[welcome]] again.", to: ideas)
+
+        let indexer = WorkspaceIndexer()
+        indexer.selectedVaultURL = vault
+        indexer.scanVault()
+
+        let graph = LinkGraph()
+        await graph.rebuild(from: indexer.notes)
+
+        let welcomeNote = try #require(indexer.notes.first { $0.title == "Welcome" })
+        let backlinks = graph.backlinks(for: welcomeNote, in: indexer.notes)
+
+        // Ideas links to Welcome (case-insensitively); Welcome doesn't back-link itself.
+        #expect(backlinks.map(\.title) == ["Ideas"])
+    }
 }

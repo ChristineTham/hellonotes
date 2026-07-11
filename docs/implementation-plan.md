@@ -27,12 +27,14 @@ Goal: **select a vault → open a note → edit with live Markdown → auto-save
 
 **MVP done-when:** open an existing folder of `.md` files, edit any note with live formatting and code highlighting, changes auto-persist, and new/deleted notes reflect on disk — all reopening cleanly on relaunch.
 
-## Milestone 2 — Knowledge graph & math (v0.2)  [P1]
-- Add `MarkdownEngineLatex` + `swift-markdown` to the target.
-- `Core/MarkdownParsing` extracts `[[wiki-links]]`, headings, `#tags`.
-- `LinkGraph` (`@Observable`): forward links + async backlink index.
-- Wiki-link click → navigate (create-on-miss); **Backlinks panel** in the editor column.
-- LaTeX rendering on.
+## Milestone 2 — Knowledge graph & math (v0.2)  ✅ (done)  [P1]
+- ✅ Added `MarkdownEngineLatex` + `Markdown` (swift-markdown) to the target.
+- ✅ `Core/MarkdownParsing` extracts `[[wiki-links]]` (regex), headings (swift-markdown AST), `#tags` (regex).
+- ✅ `LinkGraph` (`@Observable`): async backlink index, rebuilt off-main on note-set / save changes.
+- ✅ Backlinks panel in the editor column; navigation between linked notes.
+- ✅ LaTeX rendering (SwiftMath bridge).
+- ✅ Wiki-link click → navigate. **Required a `VaultWikiLinkResolver`**: MarkdownEngine only makes a `[[Name]]` clickable when a `WikiLinkResolver` reports the target `exists`. The resolver reports existence only (empty `id`) so the editor never rewrites `[[Name]]` → `[[Name|id]]` — files stay byte-for-byte intact. Existing targets are underlined/clickable; unknown targets render muted.
+- Follow-ups: create-on-miss by clicking a muted link (the package doesn't fire the callback for non-existent targets); incremental (per-note) graph updates instead of full rebuilds; `#tags` index UI.
 
 ## Milestone 3 — Search & navigation (v0.2–0.3)  [P1]
 - Full-text workspace search; results list.
