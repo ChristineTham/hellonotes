@@ -89,6 +89,18 @@ iOS scope note: macOS-only features (live styling / code / math via MarkdownEngi
 - **iPad landscape** shows all three columns at once (like macOS); **iPad portrait** tucks the sidebar behind a toggle (balanced style); **iPhone** collapses to a push stack and, via `preferredCompactColumn = .content`, opens straight to the note list (back reveals the filter sidebar).
 - Shares `VaultSearchModel` with macOS for the tag index. Verified in both simulators (iPad Pro 11" landscape + portrait, iPhone 17): three columns on iPad landscape with note selection loading the editor while the list stays visible; iPhone opens to the list and pushes to the editor. Editing autosaves to disk on both.
 
+## Milestone 7 — Writing companions (Lettera-inspired)  ✅ (done)  [P2]
+Four features surveyed from [Lettera](https://lettera.md) and approved for inclusion:
+- ✅ **Document statistics** (`Core/DocumentStatistics` — pure/`nonisolated`): words, characters, paragraphs, and an estimated reading time, shown in the outline popover. Word count ignores tokens that are only Markdown markers (`#`, `-`, `>`).
+- ✅ **Outline / table of contents** (`UI/OutlineView` + `MarkdownParsing.headings`): the popover shows the note's heading structure (level-indented, H1 in semibold) for at-a-glance orientation.
+- ✅ **Export** (`Core/MarkdownExport` + `UI/EditorExport`): export the current note to **HTML** (via `swift-markdown`'s `HTMLFormatter`, wrapped in a styled document) or **PDF** (rendered through an offscreen `NSTextView`, no WebView) via `NSSavePanel`.
+- ✅ **Multi-tab editing** (`State/EditorTabs` + `UI/EditorTabBar`): open several notes as tabs above the editor; a tab bar appears once more than one note is open, tabs stay in sync with the sidebar selection, and closing a tab flushes its edits and falls back to a neighbour.
+
+Verified live on macOS: statistics compute correctly, the outline lists all headings indented by level, and multi-tab open/switch/close (with the bar auto-hiding at one tab) all work. `documentStatistics()`, `htmlExportRendersMarkdown()`, and `editorTabsOpenReuseAndClose()` cover the logic off-UI.
+
+Deferred, with rationale:
+- **Outline jump-to-section is display-only.** MarkdownEngine's find bus *does* locate the heading (confirmed: it reports a match), but its scroll-into-view is a no-op for our full-width (non-reading-column) editor — TextKit 2 doesn't lay out off-screen content, so `scrollRangeToVisible` can't reach it. The engine only scrolls reliably in its fixed-width **reading-column** mode, which clips text when the window is narrower than the column. Rather than impose a reading column, the outline stays a read-only structure map. (Same root cause as the Milestone 3 "scroll-to-heading" deferral.) Revisit if MarkdownEngine adds a public scroll-to-range API.
+
 ---
 
 ## Sequencing notes

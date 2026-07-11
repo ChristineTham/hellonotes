@@ -14,8 +14,8 @@ struct MacContentView: View {
     @Environment(WorkspaceIndexer.self) private var indexer
     @Environment(\.scenePhase) private var scenePhase
 
-    /// Owns the open document and its debounced autosave.
-    @State private var editor = EditorModel()
+    /// Open notes as tabs, each with its own debounced-autosave editor.
+    @State private var tabs = EditorTabs()
 
     /// The vault's `[[wiki-link]]` / backlink index.
     @State private var linkGraph = LinkGraph()
@@ -80,6 +80,11 @@ struct MacContentView: View {
         indexer.notes.first { $0.id == selectedNoteID }
     }
 
+    /// The editor for the active tab (the selected note).
+    private var activeEditor: EditorModel? {
+        tabs.editor(withID: selectedNoteID)
+    }
+
     private var backlinks: [Note] {
         guard let selectedNote else { return [] }
         return linkGraph.backlinks(for: selectedNote, in: indexer.notes)
@@ -91,13 +96,7 @@ struct MacContentView: View {
         } content: {
             noteList
         } detail: {
-            NoteEditorView(
-                editor: editor,
-                backlinks: backlinks,
-                wikiResolver: wikiResolver,
-                onOpenWikiLink: openWikiLink,
-                onOpenNote: { selectedNoteID = $0.id }
-            )
+            editorColumn
         }
         .task {
             // Reopen the last vault on first launch.
@@ -112,8 +111,10 @@ struct MacContentView: View {
             refreshDerived(with: indexer.notes)
         }
         .onChange(of: selectedNoteID) { _, newID in
-            let note = indexer.notes.first { $0.id == newID }
-            Task { await editor.open(note) }
+            // Ensure a tab exists for (and loads) the selected note.
+            if let note = indexer.notes.first(where: { $0.id == newID }) {
+                Task { await tabs.editor(for: note) }
+            }
         }
         .onChange(of: indexer.selectedVaultURL) { _, url in
             if let url {
@@ -123,12 +124,17 @@ struct MacContentView: View {
             }
         }
         .onChange(of: indexer.notes) { _, notes in
-            // Note set changed (scan / create / delete): refresh derived data.
+            // Note set changed (scan / create / delete): refresh derived data
+            // and drop tabs for notes that no longer exist.
             refreshDerived(with: notes)
+            tabs.prune(keeping: Set(notes.map(\.id)))
+            if selectedNoteID.map({ id in !notes.contains { $0.id == id } }) == true {
+                selectedNoteID = tabs.openNotes.last?.id
+            }
             Task { await git.refreshStatus() }
         }
-        .onChange(of: editor.savedRevision) { _, _ in
-            // A note's contents changed on disk: refresh links & search index.
+        .onChange(of: tabs.totalSavedRevision) { _, _ in
+            // A tab saved: refresh links & search index.
             refreshDerived(with: indexer.notes)
             Task { await git.refreshStatus() }
             if autoCommit {
@@ -139,7 +145,7 @@ struct MacContentView: View {
             // Safety net beyond the debounce: flush unsaved edits when the app
             // is no longer active (hidden, backgrounded, or quitting).
             if newPhase != .active {
-                Task { await editor.flush() }
+                Task { await tabs.flushAll() }
             }
         }
         .sheet(isPresented: $showOpenQuickly) {
@@ -289,6 +295,48 @@ struct MacContentView: View {
         "Update notes — \(Date.now.formatted(date: .abbreviated, time: .shortened))"
     }
 
+    // MARK: - Column 3: Editor (with tabs)
+
+    @ViewBuilder
+    private var editorColumn: some View {
+        VStack(spacing: 0) {
+            if tabs.openNotes.count > 1 {
+                EditorTabBar(
+                    notes: tabs.openNotes,
+                    activeID: selectedNoteID,
+                    onSelect: { selectedNoteID = $0 },
+                    onClose: closeTab
+                )
+                Divider()
+            }
+
+            if let activeEditor {
+                NoteEditorView(
+                    editor: activeEditor,
+                    backlinks: backlinks,
+                    wikiResolver: wikiResolver,
+                    onOpenWikiLink: openWikiLink,
+                    onOpenNote: { selectedNoteID = $0.id }
+                )
+            } else {
+                ContentUnavailableView(
+                    "No Note Selected",
+                    systemImage: "doc.text",
+                    description: Text("Select a note from the list, or create a new one.")
+                )
+            }
+        }
+    }
+
+    private func closeTab(_ id: Note.ID) {
+        Task {
+            let next = await tabs.close(id)
+            if selectedNoteID == id {
+                selectedNoteID = next
+            }
+        }
+    }
+
     // MARK: - Column 2: Note list
 
     private var noteList: some View {
@@ -386,7 +434,7 @@ struct MacContentView: View {
         let watcher = FileWatcher {
             Task { @MainActor in
                 indexer.scanVault()
-                await editor.reconcileWithDisk()
+                await tabs.reconcileAll()
             }
         }
         watcher.start(url: url)

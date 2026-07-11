@@ -30,6 +30,7 @@ struct NoteEditorView: View {
     var onOpenNote: (Note) -> Void = { _ in }
 
     @State private var showMermaid = false
+    @State private var showOutline = false
 
     private var frontMatter: [FrontMatterField]? {
         MarkdownParsing.frontMatter(in: editor.text)
@@ -73,6 +74,33 @@ struct NoteEditorView: View {
                 }
                 .navigationTitle(editor.note?.title ?? "")
                 .toolbar {
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            showOutline = true
+                        } label: {
+                            Label("Outline & Statistics", systemImage: "list.bullet.indent")
+                        }
+                        .help("Outline & statistics")
+                        .popover(isPresented: $showOutline, arrowEdge: .top) {
+                            OutlineView(text: editor.text)
+                        }
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Menu {
+                            Button("Export as HTML…") {
+                                if let note = editor.note {
+                                    EditorExport.exportHTML(markdown: editor.text, title: note.title)
+                                }
+                            }
+                            Button("Export as PDF…") {
+                                if let note = editor.note {
+                                    EditorExport.exportPDF(markdown: editor.text, title: note.title)
+                                }
+                            }
+                        } label: {
+                            Label("Export", systemImage: "square.and.arrow.up")
+                        }
+                    }
                     ToolbarItem(placement: .automatic) {
                         Button {
                             showMermaid = true

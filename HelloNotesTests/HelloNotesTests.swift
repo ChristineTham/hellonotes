@@ -378,6 +378,54 @@ struct HelloNotesTests {
         #expect(git.status.isClean)
     }
 
+    // MARK: - Document statistics & export
+
+    @Test
+    func documentStatistics() {
+        let text = "# Title\n\nThe quick brown fox.\n\nAnother short paragraph here."
+        let stats = DocumentAnalyzer.analyze(text)
+        #expect(stats.words == 9)          // Title + The quick brown fox + Another short paragraph here
+        #expect(stats.paragraphs == 3)     // heading, sentence, sentence
+        #expect(stats.readingMinutes == 1) // rounds up, min 1
+        #expect(DocumentAnalyzer.analyze("").readingMinutes == 0)
+    }
+
+    @Test
+    func htmlExportRendersMarkdown() {
+        let html = MarkdownExport.html(from: "# Hi\n\nSome **bold** text.", title: "Doc")
+        #expect(html.contains("<h1>Hi</h1>"))
+        #expect(html.contains("<strong>bold</strong>"))
+        #expect(html.contains("<title>Doc</title>"))
+    }
+
+    // MARK: - EditorTabs
+
+    @Test @MainActor
+    func editorTabsOpenReuseAndClose() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        let a = vault.appendingPathComponent("A.md")
+        let b = vault.appendingPathComponent("B.md")
+        try write("# A", to: a)
+        try write("# B", to: b)
+        let noteA = Note(title: "A", fileURL: a, lastModified: .now)
+        let noteB = Note(title: "B", fileURL: b, lastModified: .now)
+
+        let tabs = EditorTabs()
+        await tabs.editor(for: noteA)
+        await tabs.editor(for: noteB)
+        #expect(tabs.openNotes.map(\.title) == ["A", "B"])
+
+        // Reopening an existing note doesn't add a second tab.
+        await tabs.editor(for: noteA)
+        #expect(tabs.openNotes.count == 2)
+
+        let next = await tabs.close(noteA.id)
+        #expect(tabs.openNotes.map(\.title) == ["B"])
+        #expect(next == noteB.id)
+    }
+
     // MARK: - Image paste
 
     @Test @MainActor
