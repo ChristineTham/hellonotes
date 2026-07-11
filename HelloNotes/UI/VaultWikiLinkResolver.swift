@@ -36,7 +36,16 @@ final class VaultWikiLinkResolver: WikiLinkResolver, @unchecked Sendable {
 
     func resolve(displayName: String, range: NSRange) -> WikiLinkResolution? {
         lock.lock(); defer { lock.unlock() }
-        let exists = titles.contains(displayName.lowercased())
+        // A `[[Note#heading]]` target resolves on the note title alone — the
+        // `#heading` fragment locates a spot *within* that note and isn't part of
+        // its filename. Strip it before the existence check so heading links
+        // render as resolved (and therefore clickable → navigable) rather than
+        // muted. The full `displayName` (heading included) is still what the
+        // editor hands back to `onLinkClick`, so the host can scroll to it.
+        let base = displayName.split(separator: "#", maxSplits: 1,
+                                     omittingEmptySubsequences: false).first
+            .map(String.init) ?? displayName
+        let exists = titles.contains(base.lowercased())
         return WikiLinkResolution(id: "", exists: exists)
     }
 

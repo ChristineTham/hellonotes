@@ -651,17 +651,49 @@ struct MacContentView: View {
             return
         }
 
-        // Drop any `#heading` suffix — we navigate to the note (the editor can't
-        // reliably scroll to a heading; see docs/unimplemented.md).
-        let base = target.split(separator: "#", maxSplits: 1).first.map(String.init) ?? target
+        // Split `Note#heading`: an empty base is a same-note `[[#heading]]` link.
+        let base: String
+        let heading: String?
+        if let hash = target.firstIndex(of: "#") {
+            base = String(target[..<hash])
+            let after = String(target[target.index(after: hash)...])
+            heading = after.isEmpty ? nil : after
+        } else {
+            base = target
+            heading = nil
+        }
 
-        if let url = linkGraph.resolve(base),
-           let note = indexer.notes.first(where: { $0.fileURL == url }) {
-            selectedNoteID = note.id
+        let destination: Note?
+        if base.isEmpty {
+            destination = selectedNote
+        } else if let url = linkGraph.resolve(base),
+                  let note = indexer.notes.first(where: { $0.fileURL == url }) {
+            destination = note
         } else if let match = indexer.notes.first(where: { $0.title.localizedCaseInsensitiveCompare(base) == .orderedSame }) {
-            selectedNoteID = match.id
-        } else if let created = indexer.createNote(title: base) {
-            selectedNoteID = created.id
+            destination = match
+        } else {
+            destination = indexer.createNote(title: base)
+        }
+
+        guard let destination else { return }
+        let switching = selectedNoteID != destination.id
+        selectedNoteID = destination.id
+
+        // If the link targets a heading, scroll to it once the note is loaded.
+        if let heading {
+            Task {
+                await tabs.editor(for: destination)
+                if switching { try? await Task.sleep(for: .milliseconds(350)) }
+                scrollToHeading(heading)
+            }
+        }
+    }
+
+    /// Ask the visible editor to scroll to (and briefly highlight) `title`.
+    private func scrollToHeading(_ title: String) {
+        NotificationCenter.default.post(name: .hnEditorFindQuery, object: nil, userInfo: ["query": title])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            NotificationCenter.default.post(name: .hnEditorClearHighlights, object: nil)
         }
     }
 }

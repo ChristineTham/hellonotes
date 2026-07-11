@@ -74,7 +74,12 @@ struct NoteWindowView: View {
             NSWorkspace.shared.open(url)
             return
         }
-        if let match = indexer.notes.first(where: { $0.title.localizedCaseInsensitiveCompare(target) == .orderedSame }) {
+        // `[[Note#heading]]` resolves on the note title; the `#heading` fragment
+        // points within the note (scroll-to-heading is a main-window affordance).
+        let base = target.split(separator: "#", maxSplits: 1,
+                                omittingEmptySubsequences: false).first
+            .map(String.init) ?? target
+        if let match = indexer.notes.first(where: { $0.title.localizedCaseInsensitiveCompare(base) == .orderedSame }) {
             openWindow(value: match.fileURL)
         }
     }
