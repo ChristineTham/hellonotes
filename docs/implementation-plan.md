@@ -36,10 +36,11 @@ Goal: **select a vault → open a note → edit with live Markdown → auto-save
 - ✅ Wiki-link click → navigate. **Required a `VaultWikiLinkResolver`**: MarkdownEngine only makes a `[[Name]]` clickable when a `WikiLinkResolver` reports the target `exists`. The resolver reports existence only (empty `id`) so the editor never rewrites `[[Name]]` → `[[Name|id]]` — files stay byte-for-byte intact. Existing targets are underlined/clickable; unknown targets render muted.
 - Follow-ups: create-on-miss by clicking a muted link (the package doesn't fire the callback for non-existent targets); incremental (per-note) graph updates instead of full rebuilds; `#tags` index UI.
 
-## Milestone 3 — Search & navigation (v0.2–0.3)  [P1]
-- Full-text workspace search; results list.
-- "Open Quickly" fuzzy finder (⌘O) over files + headings.
-- Folder tree with sort options; external-change detection via `FileWatcher` (FSEvents).
+## Milestone 3 — Search & navigation (v0.2–0.3)  ✅ (mostly done)  [P1]
+- ✅ Full-text workspace search: the list matches note titles *and* bodies, with a snippet per hit (`VaultSearchModel` caches contents off-main).
+- ✅ "Open Quickly" fuzzy finder (⌘O) over note titles + headings (`FuzzyMatch`, `OpenQuicklyView`); Return opens the top hit.
+- ✅ External-change detection via `Core/FileWatcher` (FSEvents) → auto re-index on external edits / git pulls / Finder ops.
+- Deferred to a later pass: **folder tree with sort options** (the biggest remaining UI lift); scroll-to-heading when opening a heading hit; incremental (per-note) index updates instead of full re-reads; conflict handling when the open note changes on disk.
 
 ## Milestone 4 — Git sync (v0.3)  [P1]
 - `Core/GitEngine` + `GitService` actor over SwiftGitX.

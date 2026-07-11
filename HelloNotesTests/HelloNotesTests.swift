@@ -190,4 +190,63 @@ struct HelloNotesTests {
         // Ideas links to Welcome (case-insensitively); Welcome doesn't back-link itself.
         #expect(backlinks.map(\.title) == ["Ideas"])
     }
+
+    // MARK: - FuzzyMatch
+
+    @Test
+    func fuzzyMatchScoresSubsequences() {
+        // Non-subsequence → nil.
+        #expect(FuzzyMatch.score(query: "xyz", candidate: "abc") == nil)
+        // Empty query trivially matches.
+        #expect(FuzzyMatch.score(query: "", candidate: "abc") == 0)
+        // Word-boundary matches outrank scattered ones.
+        let boundary = try! #require(FuzzyMatch.score(query: "wl", candidate: "wiki-links"))
+        let scattered = try! #require(FuzzyMatch.score(query: "ik", candidate: "wiki-links"))
+        #expect(boundary > scattered)
+    }
+
+    // MARK: - VaultSearchModel
+
+    @Test @MainActor
+    func fullTextSearchFindsBodyMatchesWithSnippet() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        try write("# Alpha\n\nThe quick brown fox jumps.", to: vault.appendingPathComponent("Alpha.md"))
+        try write("# Beta\n\nNothing to see.", to: vault.appendingPathComponent("Beta.md"))
+
+        let indexer = WorkspaceIndexer()
+        indexer.selectedVaultURL = vault
+        indexer.scanVault()
+
+        let search = VaultSearchModel()
+        await search.refresh(from: indexer.notes)
+
+        let hits = search.fullTextResults(query: "brown fox")
+        #expect(hits.map(\.note.title) == ["Alpha"])
+        #expect(hits.first?.snippet.contains("brown fox") == true)
+    }
+
+    @Test @MainActor
+    func openQuicklyMatchesTitlesAndHeadings() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        try write("# Meeting Notes\n\n## Action Items\n\nDo the thing.", to: vault.appendingPathComponent("Meeting Notes.md"))
+
+        let indexer = WorkspaceIndexer()
+        indexer.selectedVaultURL = vault
+        indexer.scanVault()
+
+        let search = VaultSearchModel()
+        await search.refresh(from: indexer.notes)
+
+        // The note and its heading are both candidates.
+        let all = search.quickOpenResults(query: "")
+        #expect(all.contains { $0.kind == .note && $0.title == "Meeting Notes" })
+
+        // Fuzzy query surfaces the heading candidate.
+        let actionHits = search.quickOpenResults(query: "action")
+        #expect(actionHits.contains { $0.kind == .heading && $0.subtitle == "Action Items" })
+    }
 }

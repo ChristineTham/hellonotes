@@ -23,15 +23,33 @@ struct MacContentView: View {
     /// Tells the editor which wiki-link targets exist (drives clickability).
     @State private var wikiResolver = VaultWikiLinkResolver()
 
+    /// Caches note contents for full-text search and "Open Quickly".
+    @State private var search = VaultSearchModel()
+
+    /// Watches the vault for external changes (edits, git pulls, Finder ops).
+    @State private var fileWatcher: FileWatcher?
+
     /// Selected note identity (its file URL — stable across re-indexing).
     @State private var selectedNoteID: Note.ID?
 
-    /// Title filter for the note list.
+    /// Full-text query for the note list.
     @State private var searchText = ""
 
-    private var filteredNotes: [Note] {
-        guard !searchText.isEmpty else { return indexer.notes }
-        return indexer.notes.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+    /// Whether the ⌘O "Open Quickly" palette is showing.
+    @State private var showOpenQuickly = false
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The rows shown in the list: all notes, or full-text hits when searching.
+    private var rows: [NoteRow] {
+        if isSearching {
+            return search.fullTextResults(query: searchText).map {
+                NoteRow(note: $0.note, snippet: $0.snippet.isEmpty ? nil : $0.snippet)
+            }
+        }
+        return indexer.notes.map { NoteRow(note: $0, snippet: nil) }
     }
 
     private var selectedNote: Note? {
@@ -62,19 +80,25 @@ struct MacContentView: View {
             if indexer.selectedVaultURL == nil {
                 indexer.restoreVault()
             }
-            refreshGraph(with: indexer.notes)
+            if let url = indexer.selectedVaultURL {
+                startWatching(url)
+            }
+            refreshDerived(with: indexer.notes)
         }
         .onChange(of: selectedNoteID) { _, newID in
             let note = indexer.notes.first { $0.id == newID }
             Task { await editor.open(note) }
         }
+        .onChange(of: indexer.selectedVaultURL) { _, url in
+            if let url { startWatching(url) }
+        }
         .onChange(of: indexer.notes) { _, notes in
-            // Note set changed (scan / create / delete): refresh links & backlinks.
-            refreshGraph(with: notes)
+            // Note set changed (scan / create / delete): refresh derived data.
+            refreshDerived(with: notes)
         }
         .onChange(of: editor.savedRevision) { _, _ in
-            // A note's contents changed on disk: its links may have too.
-            Task { await linkGraph.rebuild(from: indexer.notes) }
+            // A note's contents changed on disk: refresh links & search index.
+            refreshDerived(with: indexer.notes)
         }
         .onChange(of: scenePhase) { _, newPhase in
             // Safety net beyond the debounce: flush unsaved edits when the app
@@ -82,6 +106,9 @@ struct MacContentView: View {
             if newPhase != .active {
                 Task { await editor.flush() }
             }
+        }
+        .sheet(isPresented: $showOpenQuickly) {
+            OpenQuicklyView(search: search) { selectedNoteID = $0.id }
         }
     }
 
@@ -121,25 +148,44 @@ struct MacContentView: View {
     // MARK: - Column 2: Note list
 
     private var noteList: some View {
-        List(filteredNotes, selection: $selectedNoteID) { note in
+        List(rows, selection: $selectedNoteID) { row in
             VStack(alignment: .leading, spacing: 4) {
-                Text(note.title)
+                Text(row.note.title)
                     .font(.headline)
-                Text(note.lastModified, format: .dateTime.year().month().day().hour().minute())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let snippet = row.snippet {
+                    Text(snippet)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                } else {
+                    Text(row.note.lastModified, format: .dateTime.year().month().day().hour().minute())
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
-            .tag(note.id)
+            .tag(row.note.id)
             .contextMenu {
                 Button(role: .destructive) {
-                    delete(note)
+                    delete(row.note)
                 } label: {
                     Label("Move to Trash", systemImage: "trash")
                 }
             }
         }
-        .searchable(text: $searchText, placement: .sidebar, prompt: "Search notes")
+        .searchable(text: $searchText, placement: .sidebar, prompt: "Search notes & contents")
         .navigationTitle("Notes")
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    showOpenQuickly = true
+                } label: {
+                    Label("Open Quickly", systemImage: "magnifyingglass")
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                .help("Open Quickly (⌘O)")
+                .disabled(indexer.notes.isEmpty)
+            }
+        }
         .overlay {
             if indexer.notes.isEmpty {
                 ContentUnavailableView(
@@ -147,17 +193,31 @@ struct MacContentView: View {
                     systemImage: "doc.text",
                     description: Text("Select a vault folder to index your Markdown files.")
                 )
+            } else if isSearching && rows.isEmpty {
+                ContentUnavailableView.search(text: searchText)
             }
         }
     }
 
     // MARK: - Actions
 
-    /// Keep the wiki-link resolver's known titles and the backlink graph in
-    /// sync with the current note set.
-    private func refreshGraph(with notes: [Note]) {
+    /// Keep the derived data (wiki-link resolver, backlink graph, search index)
+    /// in sync with the current note set.
+    private func refreshDerived(with notes: [Note]) {
         wikiResolver.update(titles: notes.map(\.title))
-        Task { await linkGraph.rebuild(from: notes) }
+        Task {
+            await linkGraph.rebuild(from: notes)
+            await search.refresh(from: notes)
+        }
+    }
+
+    /// Start watching the vault directory; external changes trigger a re-index.
+    private func startWatching(_ url: URL) {
+        let watcher = FileWatcher {
+            Task { @MainActor in indexer.scanVault() }
+        }
+        watcher.start(url: url)
+        fileWatcher = watcher
     }
 
     private func newNote() {
@@ -192,5 +252,12 @@ struct MacContentView: View {
             selectedNoteID = created.id
         }
     }
+}
+
+/// A note list row: the note plus an optional search snippet.
+private struct NoteRow: Identifiable {
+    let note: Note
+    let snippet: String?
+    var id: Note.ID { note.id }
 }
 #endif
