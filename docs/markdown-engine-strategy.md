@@ -9,8 +9,10 @@
   based on the `0.8.0` tag. HelloNotes depends on it by URL + branch.
 - **Fix #1 landed — scroll-to-location.** The `handleFindQuery` default scroll now
   uses the TextKit 2 fragment path universally (7-line change). Outline **jump-to-heading
-  now scrolls** (verified live). Next: wire `[[Note#heading]]` link clicks to post the
-  same find query so they scroll too, then Fix #2 (inline Mermaid).
+  now scrolls** (verified live). `[[Note#heading]]` **link clicks** now navigate *and*
+  scroll — a host-side follow-up: the resolver strips the `#heading` so the link renders
+  clickable, and the click handler posts the find query to scroll. Next: Fix #2 (inline
+  Mermaid).
 - Workflow: patches land on `hellonotes-patches`; open upstream PRs to shrink the delta.
 
 Every editor-layer item in [unimplemented.md](unimplemented.md) is blocked by a missing

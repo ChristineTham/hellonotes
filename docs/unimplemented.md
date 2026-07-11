@@ -25,10 +25,10 @@ we'd need. Several features have been shaped around these walls.
   (see [markdown-engine-strategy.md](markdown-engine-strategy.md)): the engine's default
   scroll path now uses the TextKit 2 fragment layout universally, so find/jump reaches
   off-screen matches. The outline **jumps to a heading and scrolls** to it (restored and
-  verified live).
-  - 🛠️ *Remaining:* `[[Note#heading]]` **link clicks** still open the note at the top —
-    a small host-side follow-up: after navigating, post the same `.hnEditorFindQuery` for
-    the heading so it scrolls too.
+  verified live). `[[Note#heading]]` **link clicks** now navigate *and* scroll too: the
+  wiki-link resolver strips the `#heading` fragment before the existence check (so the link
+  renders resolved/clickable), and the host parses the fragment on click to post the same
+  `.hnEditorFindQuery`. Verified live.
 
 - 🧱 **Note transclusion / embeds `![[Note]]` / `![[Note#heading]]`** *(Obsidian review)*
   Rendering another note (or a heading/block of it) inline. Image embeds `![[image]]`
