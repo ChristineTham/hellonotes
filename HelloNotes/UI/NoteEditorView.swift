@@ -404,6 +404,8 @@ struct NoteEditorView: View {
     // Bridges are stateless and expensive-ish to build, so share one instance.
     private static let syntaxHighlighter = HighlighterSwiftBridge()
     private static let latexRenderer = SwiftMathBridge()
+    // Shared so its source→image cache is reused across notes.
+    private static let diagramRenderer = MermaidDiagramRenderer()
 
     /// Editor configuration wiring in the HighlighterSwift (code) and SwiftMath
     /// (LaTeX) bridges plus the vault wiki-link resolver, so fenced code blocks
@@ -413,6 +415,7 @@ struct NoteEditorView: View {
         var config = MarkdownEditorConfiguration.default
         config.services.syntaxHighlighter = Self.syntaxHighlighter
         config.services.latex = Self.latexRenderer
+        config.services.diagrams = Self.diagramRenderer
         config.services.wikiLinks = wikiResolver
         config.services.bus.findQuery = .hnEditorFindQuery
         config.services.bus.findClearHighlights = .hnEditorClearHighlights
