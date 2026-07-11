@@ -58,6 +58,7 @@ struct NoteEditorView: View {
     @State private var showMermaid = false
     @State private var showOutline = false
     @State private var showHistory = false
+    @State private var showIntelligence = false
 
     // Editable front-matter properties, seeded per note.
     @State private var properties: [Property] = []
@@ -369,11 +370,30 @@ struct NoteEditorView: View {
                         .disabled(mermaidSources.isEmpty)
                     }
                     ToolbarItem(placement: .automatic) {
+                        Button {
+                            showIntelligence = true
+                        } label: {
+                            Label("Intelligence", systemImage: "sparkles")
+                        }
+                        .help("Summarize & suggest with on-device intelligence")
+                        .disabled(editor.note == nil)
+                    }
+                    ToolbarItem(placement: .automatic) {
                         saveStatus
                     }
                 }
                 .sheet(isPresented: $showMermaid) {
                     MermaidPreviewView(sources: mermaidSources)
+                }
+                .sheet(isPresented: $showIntelligence) {
+                    IntelligenceView(
+                        noteText: editor.text,
+                        existingTags: tagCandidates,
+                        linkCandidates: linkCandidates,
+                        onInsertSummary: insertSummaryCallout,
+                        onAddTags: addTags,
+                        onAddLinks: addLinks
+                    )
                 }
                 .sheet(isPresented: $showHistory) {
                     if let url = editor.note?.fileURL {
@@ -392,6 +412,46 @@ struct NoteEditorView: View {
     private func pasteImage(_ pasteboard: NSPasteboard) -> String? {
         guard let noteURL = editor.note?.fileURL else { return nil }
         return ImagePaste.saveImage(from: pasteboard, nextTo: noteURL, timestamp: .now)
+    }
+
+    // MARK: - Intelligence apply handlers
+
+    /// Insert an AI summary as a `> [!summary]` callout at the top of the body
+    /// (after any front matter).
+    private func insertSummaryCallout(_ text: String) {
+        let quoted = text
+            .components(separatedBy: "\n")
+            .map { "> \($0)" }
+            .joined(separator: "\n")
+        let callout = "> [!summary] Summary\n\(quoted)\n\n"
+
+        let full = editor.text
+        let body = FrontMatter.body(of: full)
+        if body.count < full.count {
+            let frontMatter = String(full.dropLast(body.count))
+            editor.text = frontMatter + callout + body
+        } else {
+            editor.text = callout + full
+        }
+    }
+
+    /// Append suggested `#tags` not already present in the note.
+    private func addTags(_ tags: [String]) {
+        let present = Set(MarkdownParsing.tags(in: editor.text).map { $0.lowercased() })
+        let fresh = tags.filter { !present.contains($0.lowercased()) }
+        guard !fresh.isEmpty else { return }
+        let line = fresh.map { "#\($0)" }.joined(separator: " ")
+        editor.text = editor.text.trimmingTrailingNewlines() + "\n\n" + line + "\n"
+    }
+
+    /// Append suggested `[[links]]` under a "Related" heading.
+    private func addLinks(_ titles: [String]) {
+        guard !titles.isEmpty else { return }
+        let existing = Set(MarkdownParsing.wikiLinkTargets(in: editor.text).map { $0.lowercased() })
+        let fresh = titles.filter { !existing.contains($0.lowercased()) }
+        guard !fresh.isEmpty else { return }
+        let links = fresh.map { "- [[\($0)]]" }.joined(separator: "\n")
+        editor.text = editor.text.trimmingTrailingNewlines() + "\n\n## Related\n\(links)\n"
     }
 
     // MARK: - Find & replace
@@ -596,6 +656,14 @@ struct NoteEditorView: View {
         config.services.bus.replaceCurrent = .hnEditorReplaceCurrent
         config.services.bus.replaceAll = .hnEditorReplaceAll
         return config
+    }
+}
+
+private extension String {
+    func trimmingTrailingNewlines() -> String {
+        var s = self
+        while let last = s.last, last == "\n" || last == "\r" { s.removeLast() }
+        return s
     }
 }
 #endif
