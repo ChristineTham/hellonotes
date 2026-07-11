@@ -38,19 +38,37 @@ struct MacContentView: View {
     /// Whether the ⌘O "Open Quickly" palette is showing.
     @State private var showOpenQuickly = false
 
+    /// How notes are ordered in the folder tree.
+    @State private var sortOrder: VaultSortOrder = .modified
+
+    /// Active tag filter, if any (mutually exclusive with the folder tree).
+    @State private var selectedTag: String?
+
     private var isSearching: Bool {
         !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// The rows shown in the list: all notes, or full-text hits when searching.
-    private var rows: [NoteRow] {
-        if isSearching {
-            return search.fullTextResults(query: searchText).map {
-                NoteRow(note: $0.note, snippet: $0.snippet.isEmpty ? nil : $0.snippet)
-            }
+    /// Full-text hits shown as flat rows while searching.
+    private var searchRows: [NoteRow] {
+        search.fullTextResults(query: searchText).map {
+            NoteRow(note: $0.note, snippet: $0.snippet.isEmpty ? nil : $0.snippet)
         }
-        return indexer.notes.map { NoteRow(note: $0, snippet: nil) }
     }
+
+    /// Notes matching the active tag filter, as flat rows.
+    private var taggedRows: [NoteRow] {
+        guard let selectedTag else { return [] }
+        return search.notesTagged(selectedTag).map { NoteRow(note: $0, snippet: nil) }
+    }
+
+    /// The folder tree for the current vault and sort order.
+    private var tree: [VaultTreeNode] {
+        guard let vault = indexer.selectedVaultURL else { return [] }
+        return VaultTree.build(from: indexer.notes, vaultURL: vault, sort: sortOrder)
+    }
+
+    /// Distinct hashtags across the vault.
+    private var tags: [String] { search.allTags() }
 
     private var selectedNote: Note? {
         indexer.notes.first { $0.id == selectedNoteID }
@@ -136,6 +154,37 @@ struct MacContentView: View {
                 } label: {
                     Label("New Note", systemImage: "square.and.pencil")
                 }
+
+                if !tags.isEmpty {
+                    Divider()
+
+                    Button {
+                        selectedTag = nil
+                    } label: {
+                        Label("All Notes", systemImage: "tray.full")
+                            .fontWeight(selectedTag == nil ? .semibold : .regular)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("TAGS")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(tags, id: \.self) { tag in
+                                Button {
+                                    selectedTag = tag
+                                    searchText = ""
+                                } label: {
+                                    Label("#\(tag)", systemImage: "number")
+                                        .foregroundStyle(selectedTag == tag ? Color.accentColor : Color.primary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
             }
 
             Spacer()
@@ -148,33 +197,32 @@ struct MacContentView: View {
     // MARK: - Column 2: Note list
 
     private var noteList: some View {
-        List(rows, selection: $selectedNoteID) { row in
-            VStack(alignment: .leading, spacing: 4) {
-                Text(row.note.title)
-                    .font(.headline)
-                if let snippet = row.snippet {
-                    Text(snippet)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                } else {
-                    Text(row.note.lastModified, format: .dateTime.year().month().day().hour().minute())
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .tag(row.note.id)
-            .contextMenu {
-                Button(role: .destructive) {
-                    delete(row.note)
-                } label: {
-                    Label("Move to Trash", systemImage: "trash")
+        List(selection: $selectedNoteID) {
+            if isSearching {
+                ForEach(searchRows) { flatRow($0) }
+            } else if selectedTag != nil {
+                ForEach(taggedRows) { flatRow($0) }
+            } else {
+                ForEach(tree) { node in
+                    VaultTreeRow(node: node, onDelete: delete)
                 }
             }
         }
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search notes & contents")
-        .navigationTitle("Notes")
+        .navigationTitle(selectedTag.map { "#\($0)" } ?? "Notes")
         .toolbar {
+            ToolbarItem {
+                Menu {
+                    Picker("Sort By", selection: $sortOrder) {
+                        ForEach(VaultSortOrder.allCases) { order in
+                            Label(order.rawValue, systemImage: order.systemImage).tag(order)
+                        }
+                    }
+                } label: {
+                    Label("Sort", systemImage: "arrow.up.arrow.down")
+                }
+                .disabled(indexer.notes.isEmpty || isSearching || selectedTag != nil)
+            }
             ToolbarItem {
                 Button {
                     showOpenQuickly = true
@@ -193,8 +241,34 @@ struct MacContentView: View {
                     systemImage: "doc.text",
                     description: Text("Select a vault folder to index your Markdown files.")
                 )
-            } else if isSearching && rows.isEmpty {
+            } else if isSearching && searchRows.isEmpty {
                 ContentUnavailableView.search(text: searchText)
+            }
+        }
+    }
+
+    /// A flat (non-tree) note row used for search results and tag filtering.
+    private func flatRow(_ row: NoteRow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(row.note.title)
+                .font(.headline)
+            if let snippet = row.snippet {
+                Text(snippet)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            } else {
+                Text(row.note.lastModified, format: .dateTime.year().month().day().hour().minute())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .tag(row.note.id)
+        .contextMenu {
+            Button(role: .destructive) {
+                delete(row.note)
+            } label: {
+                Label("Move to Trash", systemImage: "trash")
             }
         }
     }
@@ -211,10 +285,14 @@ struct MacContentView: View {
         }
     }
 
-    /// Start watching the vault directory; external changes trigger a re-index.
+    /// Start watching the vault directory; external changes trigger a re-index
+    /// and reconcile the open note against its on-disk copy.
     private func startWatching(_ url: URL) {
         let watcher = FileWatcher {
-            Task { @MainActor in indexer.scanVault() }
+            Task { @MainActor in
+                indexer.scanVault()
+                await editor.reconcileWithDisk()
+            }
         }
         watcher.start(url: url)
         fileWatcher = watcher

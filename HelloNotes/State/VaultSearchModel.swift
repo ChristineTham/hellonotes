@@ -37,6 +37,7 @@ final class VaultSearchModel {
         let note: Note
         let text: String
         let headings: [DocumentHeading]
+        let tags: [String]
     }
 
     private var entries: [Entry] = []
@@ -46,16 +47,30 @@ final class VaultSearchModel {
         let urls = notes.map(\.fileURL)
         let noteByURL = Dictionary(notes.map { ($0.fileURL, $0) }, uniquingKeysWith: { first, _ in first })
 
-        let loaded = await Task.detached(priority: .utility) { () -> [(URL, String, [DocumentHeading])] in
+        let loaded = await Task.detached(priority: .utility) { () -> [(URL, String, [DocumentHeading], [String])] in
             urls.compactMap { url in
                 guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-                return (url, text, MarkdownParsing.headings(in: text))
+                return (url, text, MarkdownParsing.headings(in: text), MarkdownParsing.tags(in: text))
             }
         }.value
 
-        entries = loaded.compactMap { url, text, headings in
-            noteByURL[url].map { Entry(note: $0, text: text, headings: headings) }
+        entries = loaded.compactMap { url, text, headings, tags in
+            noteByURL[url].map { Entry(note: $0, text: text, headings: headings, tags: tags) }
         }
+    }
+
+    /// All distinct hashtags across the vault, sorted case-insensitively.
+    func allTags() -> [String] {
+        let unique = Set(entries.flatMap(\.tags))
+        return unique.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    /// Notes tagged with `tag` (case-insensitive).
+    func notesTagged(_ tag: String) -> [Note] {
+        let needle = tag.lowercased()
+        return entries
+            .filter { $0.tags.contains { $0.lowercased() == needle } }
+            .map(\.note)
     }
 
     /// Notes whose title or body contains `query` (case-insensitive), each with

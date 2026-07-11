@@ -66,6 +66,51 @@ struct HelloNotesTests {
     }
 
     @Test @MainActor
+    func externalChangeReloadsCleanBuffer() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        let fileURL = vault.appendingPathComponent("Note.md")
+        try write("original", to: fileURL)
+        let note = Note(title: "Note", fileURL: fileURL, lastModified: .now)
+
+        let editor = EditorModel()
+        await editor.open(note)
+
+        // Another program rewrites the file while our buffer is unchanged.
+        try write("changed on disk", to: fileURL)
+        await editor.reconcileWithDisk()
+
+        #expect(editor.text == "changed on disk")
+        #expect(editor.hasConflict == false)
+    }
+
+    @Test @MainActor
+    func externalChangeWithUnsavedEditsRaisesConflict() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        let fileURL = vault.appendingPathComponent("Note.md")
+        try write("original", to: fileURL)
+        let note = Note(title: "Note", fileURL: fileURL, lastModified: .now)
+
+        let editor = EditorModel()
+        await editor.open(note)
+
+        editor.text = "my unsaved edit"          // dirty buffer
+        try write("their external edit", to: fileURL)
+        await editor.reconcileWithDisk()
+
+        #expect(editor.hasConflict == true)
+        #expect(editor.text == "my unsaved edit") // not clobbered
+
+        // Reloading adopts the disk copy.
+        editor.resolveConflictReloading()
+        #expect(editor.text == "their external edit")
+        #expect(editor.hasConflict == false)
+    }
+
+    @Test @MainActor
     func switchingNotesFlushesPreviousEdits() async throws {
         let vault = try makeTempVault()
         defer { try? FileManager.default.removeItem(at: vault) }
@@ -248,5 +293,55 @@ struct HelloNotesTests {
         // Fuzzy query surfaces the heading candidate.
         let actionHits = search.quickOpenResults(query: "action")
         #expect(actionHits.contains { $0.kind == .heading && $0.subtitle == "Action Items" })
+    }
+
+    @Test @MainActor
+    func tagsAreIndexedAndFilterable() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        try write("# One\n\nTagged #project and #urgent.", to: vault.appendingPathComponent("One.md"))
+        try write("# Two\n\nJust #project here.", to: vault.appendingPathComponent("Two.md"))
+        try write("# Three\n\nNo tags.", to: vault.appendingPathComponent("Three.md"))
+
+        let indexer = WorkspaceIndexer()
+        indexer.selectedVaultURL = vault
+        indexer.scanVault()
+
+        let search = VaultSearchModel()
+        await search.refresh(from: indexer.notes)
+
+        #expect(search.allTags() == ["project", "urgent"])
+        #expect(Set(search.notesTagged("project").map(\.title)) == ["One", "Two"])
+        #expect(search.notesTagged("urgent").map(\.title) == ["One"])
+    }
+
+    // MARK: - VaultTree
+
+    @Test
+    func buildsFolderTreeWithFoldersFirst() throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        let projects = vault.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try write("# Root", to: vault.appendingPathComponent("Root.md"))
+        try write("# Alpha", to: projects.appendingPathComponent("Alpha.md"))
+        try write("# Beta", to: projects.appendingPathComponent("Beta.md"))
+
+        let indexer = WorkspaceIndexer()
+        indexer.selectedVaultURL = vault
+        indexer.scanVault()
+
+        let tree = VaultTree.build(from: indexer.notes, vaultURL: vault, sort: .name)
+
+        // Folder "Projects" comes before the root-level note "Root".
+        #expect(tree.map(\.name) == ["Projects", "Root"])
+        #expect(tree[0].isFolder)
+        #expect(tree[1].note?.title == "Root")
+
+        // The folder's children are the two notes, name-sorted.
+        let childTitles = tree[0].children?.compactMap { $0.note?.title }
+        #expect(childTitles == ["Alpha", "Beta"])
     }
 }

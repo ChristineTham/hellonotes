@@ -28,6 +28,13 @@ final class EditorModel {
     /// use it to know a note's contents changed on disk.
     private(set) var savedRevision = 0
 
+    /// True when the open note changed on disk *and* we have unsaved edits, so
+    /// the user must choose whether to keep their version or reload.
+    private(set) var hasConflict = false
+
+    /// The external on-disk version captured when a conflict was detected.
+    private var conflictDiskText: String?
+
     /// The live editing buffer bound to the text view. Mutations schedule a
     /// debounced save — except while we are programmatically replacing the
     /// text during a load, which must not mark the buffer dirty.
@@ -53,6 +60,8 @@ final class EditorModel {
 
         self.note = note
         saveError = nil
+        hasConflict = false
+        conflictDiskText = nil
 
         let loaded: String
         if let url = note?.fileURL {
@@ -71,6 +80,47 @@ final class EditorModel {
     func flush() async {
         saveTask?.cancel()
         saveTask = nil
+        await save()
+    }
+
+    /// React to the vault changing on disk. If the open note's file changed
+    /// externally and our buffer is clean, silently reload it. If the buffer
+    /// has unsaved edits, raise a conflict for the user to resolve.
+    func reconcileWithDisk() async {
+        guard let url = note?.fileURL,
+              let disk = try? String(contentsOf: url, encoding: .utf8) else { return }
+
+        // Matches what we last wrote (includes our own saves) → nothing to do.
+        guard disk != lastSavedText else {
+            hasConflict = false
+            conflictDiskText = nil
+            return
+        }
+
+        if isDirty {
+            conflictDiskText = disk
+            hasConflict = true
+        } else {
+            replaceText(disk)
+            lastSavedText = disk
+            isDirty = false
+        }
+    }
+
+    /// Resolve a conflict by discarding local edits and loading the disk copy.
+    func resolveConflictReloading() {
+        guard let disk = conflictDiskText else { return }
+        replaceText(disk)
+        lastSavedText = disk
+        isDirty = false
+        hasConflict = false
+        conflictDiskText = nil
+    }
+
+    /// Resolve a conflict by keeping local edits and overwriting the disk copy.
+    func resolveConflictKeepingMine() async {
+        hasConflict = false
+        conflictDiskText = nil
         await save()
     }
 

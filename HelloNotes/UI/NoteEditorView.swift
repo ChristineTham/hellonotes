@@ -39,6 +39,10 @@ struct NoteEditorView: View {
                 )
             } else {
                 VStack(spacing: 0) {
+                    if editor.hasConflict {
+                        conflictBanner
+                    }
+
                     NativeTextViewWrapper(
                         text: $editor.text,
                         configuration: configuration,
@@ -59,6 +63,23 @@ struct NoteEditorView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Conflict banner
+
+    private var conflictBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+            Text("This note changed on disk while you were editing.")
+                .font(.callout)
+            Spacer()
+            Button("Reload") { editor.resolveConflictReloading() }
+            Button("Keep Mine") { Task { await editor.resolveConflictKeepingMine() } }
+                .keyboardShortcut(.defaultAction)
+        }
+        .padding(8)
+        .background(.orange.opacity(0.15))
     }
 
     // MARK: - Backlinks

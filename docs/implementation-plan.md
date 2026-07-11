@@ -40,7 +40,17 @@ Goal: **select a vault → open a note → edit with live Markdown → auto-save
 - ✅ Full-text workspace search: the list matches note titles *and* bodies, with a snippet per hit (`VaultSearchModel` caches contents off-main).
 - ✅ "Open Quickly" fuzzy finder (⌘O) over note titles + headings (`FuzzyMatch`, `OpenQuicklyView`); Return opens the top hit.
 - ✅ External-change detection via `Core/FileWatcher` (FSEvents) → auto re-index on external edits / git pulls / Finder ops.
-- Deferred to a later pass: **folder tree with sort options** (the biggest remaining UI lift); scroll-to-heading when opening a heading hit; incremental (per-note) index updates instead of full re-reads; conflict handling when the open note changes on disk.
+
+### Deferred items — follow-up pass ✅
+Completed after the initial M2/M3 passes:
+- ✅ **Folder tree with sort options** (`Core/VaultTree`, `UI/VaultTreeRow`): the note list is a real folder tree with expand/collapse; sort by name or modified time (folders first).
+- ✅ **`#tags` filter** (M2): tags indexed in `VaultSearchModel`; a sidebar TAGS section filters the list to a tag; "All Notes" clears it.
+- ✅ **Open-note conflict handling** (`EditorModel.reconcileWithDisk`): when the open note changes on disk, a clean buffer silently reloads; an unsaved buffer raises a "Reload / Keep Mine" banner instead of clobbering edits.
+
+Still deferred, with rationale:
+- **Scroll-to-heading** when opening a heading hit — MarkdownEngine exposes no public scroll-to-range API, so a heading hit currently opens the note at the top.
+- **Create-on-miss by clicking a muted `[[link]]`** — MarkdownEngine doesn't fire the link callback for non-existent targets; needs a different hook.
+- **Incremental (per-note) index/graph updates** — the current full rebuild is correct and fast for target vault sizes; optimize when large-vault profiling warrants it.
 
 ## Milestone 4 — Git sync (v0.3)  [P1]
 - `Core/GitEngine` + `GitService` actor over SwiftGitX.
