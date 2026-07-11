@@ -126,7 +126,9 @@ final class WorkspaceIndexer {
         }
 
         scanVault()
-        return notes.first { $0.fileURL == candidate }
+        // Match on standardized URLs: the scan enumerator resolves symlinks
+        // (e.g. /var → /private/var on temp vaults) so a raw `==` can miss.
+        return notes.first { $0.fileURL.standardizedFileURL == candidate.standardizedFileURL }
     }
 
     /// Return the note at `relativePath` inside the vault, creating the file

@@ -9,8 +9,8 @@ import Foundation
 
 /// A typed YAML front-matter property. Types are inferred on parse and drive
 /// the editor UI; a small, pragmatic subset of YAML (not a full parser).
-struct Property: Identifiable, Equatable {
-    enum Kind: Equatable { case text, number, checkbox, date, list }
+nonisolated struct Property: Identifiable, Equatable {
+    nonisolated enum Kind: Equatable { case text, number, checkbox, date, list }
 
     var id = UUID()
     var key: String

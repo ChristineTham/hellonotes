@@ -9,13 +9,13 @@ import Foundation
 import Markdown
 
 /// A heading discovered in a note, used for outline / "Open Quickly" features.
-struct DocumentHeading: Hashable {
+nonisolated struct DocumentHeading: Hashable {
     let level: Int
     let title: String
 }
 
 /// A `key: value` line from a note's YAML front matter.
-struct FrontMatterField: Hashable {
+nonisolated struct FrontMatterField: Hashable {
     let key: String
     let value: String
 }
