@@ -21,20 +21,28 @@ import BeautifulMermaid
 /// `lockFocus` flip below is safe.
 final class MermaidDiagramRenderer: MarkdownEngine.DiagramRenderer, @unchecked Sendable {
     private let lock = NSLock()
+    // Keyed by source + appearance: the diagram's colors depend on light/dark.
     private var cache: [String: MarkdownEngine.DiagramRenderResult?] = [:]
 
-    func render(source: String, language: String, theme: MarkdownEditorTheme) -> MarkdownEngine.DiagramRenderResult? {
+    func render(source: String, language: String, theme: MarkdownEditorTheme, isDarkMode: Bool) -> MarkdownEngine.DiagramRenderResult? {
         guard language.lowercased() == "mermaid" else { return nil }
 
+        let key = (isDarkMode ? "dark\u{1}" : "light\u{1}") + source
         lock.lock()
-        if let cached = cache[source] {
+        if let cached = cache[key] {
             lock.unlock()
             return cached
         }
         lock.unlock()
 
+        // Transparent background so the note's own background shows through;
+        // zinc light/dark supplies foreground + node colors that read well in
+        // each appearance.
+        let diagramTheme = (isDarkMode ? DiagramTheme.zincDark : DiagramTheme.zincLight)
+            .withTransparent()
+
         let result: MarkdownEngine.DiagramRenderResult?
-        if let rendered = (try? MermaidRenderer.renderImage(source: source)) ?? nil,
+        if let rendered = (try? MermaidRenderer.renderImage(source: source, theme: diagramTheme)) ?? nil,
            rendered.size.width > 0, rendered.size.height > 0 {
             let flipped = Self.flippedVertically(rendered)
             result = MarkdownEngine.DiagramRenderResult(image: flipped, size: flipped.size)
@@ -43,7 +51,7 @@ final class MermaidDiagramRenderer: MarkdownEngine.DiagramRenderer, @unchecked S
         }
 
         lock.lock()
-        cache[source] = result
+        cache[key] = result
         lock.unlock()
         return result
     }
