@@ -62,6 +62,14 @@ struct NoteEditorView: View {
     @State private var caretRect: CGRect = .zero
     @State private var pendingReplacement: InlineReplacementRequest?
 
+    // Find & replace bar state. The engine owns the search/replace; this view
+    // just posts queries and reflects the match count it posts back.
+    @State private var showFindBar = false
+    @State private var findText = ""
+    @State private var replaceText = ""
+    @State private var findMatchCount = 0
+    @State private var findCurrentIndex = 0
+
     /// Splice the edited properties back into the note's front matter.
     private func applyProperties() {
         editor.text = FrontMatter.applying(properties, to: editor.text)
@@ -159,6 +167,21 @@ struct NoteEditorView: View {
                         conflictBanner
                     }
 
+                    if showFindBar {
+                        FindReplaceBar(
+                            findText: $findText,
+                            replaceText: $replaceText,
+                            currentIndex: $findCurrentIndex,
+                            matchCount: findMatchCount,
+                            onFindChanged: postFindQuery,
+                            onNext: { stepMatch(by: 1) },
+                            onPrevious: { stepMatch(by: -1) },
+                            onReplace: replaceCurrentMatch,
+                            onReplaceAll: replaceAllMatches,
+                            onClose: closeFindBar
+                        )
+                    }
+
                     if !properties.isEmpty || showProperties {
                         PropertiesEditor(properties: $properties, onChange: applyProperties)
                         Divider()
@@ -194,7 +217,29 @@ struct NoteEditorView: View {
                     properties = FrontMatter.properties(in: editor.text)
                     showProperties = false
                 }
+                .onChange(of: editor.note?.fileURL) { _, _ in
+                    if showFindBar { closeFindBar() }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .hnEditorFindResults)) { note in
+                    let count = note.userInfo?["count"] as? Int ?? 0
+                    findMatchCount = count
+                    if count == 0 {
+                        findCurrentIndex = 0
+                    } else {
+                        findCurrentIndex = min(findCurrentIndex, count - 1)
+                    }
+                }
                 .toolbar {
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            toggleFindBar()
+                        } label: {
+                            Label("Find & Replace", systemImage: "magnifyingglass")
+                        }
+                        .help("Find & replace (⌘F)")
+                        .keyboardShortcut("f", modifiers: .command)
+                        .disabled(editor.note == nil)
+                    }
                     ToolbarItem(placement: .automatic) {
                         Button {
                             showProperties = true
@@ -282,6 +327,68 @@ struct NoteEditorView: View {
     private func pasteImage(_ pasteboard: NSPasteboard) -> String? {
         guard let noteURL = editor.note?.fileURL else { return nil }
         return ImagePaste.saveImage(from: pasteboard, nextTo: noteURL, timestamp: .now)
+    }
+
+    // MARK: - Find & replace
+
+    private func toggleFindBar() {
+        if showFindBar {
+            closeFindBar()
+        } else {
+            showFindBar = true
+            if !findText.isEmpty { postFindQuery() }
+        }
+    }
+
+    private func closeFindBar() {
+        showFindBar = false
+        findMatchCount = 0
+        findCurrentIndex = 0
+        NotificationCenter.default.post(name: .hnEditorClearHighlights, object: nil)
+    }
+
+    /// Re-run the search from the top whenever the query changes.
+    private func postFindQuery() {
+        findCurrentIndex = 0
+        guard !findText.isEmpty else {
+            findMatchCount = 0
+            NotificationCenter.default.post(name: .hnEditorClearHighlights, object: nil)
+            return
+        }
+        NotificationCenter.default.post(
+            name: .hnEditorFindQuery,
+            object: nil,
+            userInfo: ["query": findText, "currentIndex": 0]
+        )
+    }
+
+    /// Move focus to the next/previous match, wrapping around.
+    private func stepMatch(by delta: Int) {
+        guard findMatchCount > 0 else { return }
+        findCurrentIndex = ((findCurrentIndex + delta) % findMatchCount + findMatchCount) % findMatchCount
+        NotificationCenter.default.post(
+            name: .hnEditorFindQuery,
+            object: nil,
+            userInfo: ["query": findText, "currentIndex": findCurrentIndex]
+        )
+    }
+
+    private func replaceCurrentMatch() {
+        guard findMatchCount > 0 else { return }
+        NotificationCenter.default.post(
+            name: .hnEditorReplaceCurrent,
+            object: nil,
+            userInfo: ["query": findText, "replacement": replaceText, "currentIndex": findCurrentIndex]
+        )
+    }
+
+    private func replaceAllMatches() {
+        guard findMatchCount > 0 else { return }
+        NotificationCenter.default.post(
+            name: .hnEditorReplaceAll,
+            object: nil,
+            userInfo: ["query": findText, "replacement": replaceText]
+        )
     }
 
     // MARK: - Outline navigation
@@ -419,6 +526,9 @@ struct NoteEditorView: View {
         config.services.wikiLinks = wikiResolver
         config.services.bus.findQuery = .hnEditorFindQuery
         config.services.bus.findClearHighlights = .hnEditorClearHighlights
+        config.services.bus.findResults = .hnEditorFindResults
+        config.services.bus.replaceCurrent = .hnEditorReplaceCurrent
+        config.services.bus.replaceAll = .hnEditorReplaceAll
         return config
     }
 }

@@ -14,6 +14,12 @@ extension Notification.Name {
     static let hnEditorFindQuery = Notification.Name("hn.editor.findQuery")
     /// Host → engine: clear find highlights.
     static let hnEditorClearHighlights = Notification.Name("hn.editor.clearHighlights")
+    /// Engine → host: number of matches for the last `findQuery` (`userInfo["count"]`).
+    static let hnEditorFindResults = Notification.Name("hn.editor.findResults")
+    /// Host → engine: replace the current find match (`userInfo` query/replacement/currentIndex).
+    static let hnEditorReplaceCurrent = Notification.Name("hn.editor.replaceCurrent")
+    /// Host → engine: replace every find match (`userInfo` query/replacement).
+    static let hnEditorReplaceAll = Notification.Name("hn.editor.replaceAll")
 }
 
 /// A popover showing the note's statistics and an outline (table of contents).
