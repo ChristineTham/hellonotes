@@ -86,6 +86,96 @@ final class GitService {
         }
     }
 
+    // MARK: - Note history
+
+    /// One commit in a note's history — a version the user can preview / restore.
+    struct NoteRevision: Identifiable, Hashable, Sendable {
+        let id: String          // full commit hex (identity + lookup key)
+        let shortID: String     // abbreviated hex for display
+        let summary: String
+        let authorName: String
+        let date: Date
+    }
+
+    /// The commits that changed `fileURL` (its blob differs from the parent's),
+    /// newest first. Empty when the vault isn't a repo or the file is untracked.
+    /// Walks at most `scan` commits so large histories stay responsive.
+    func history(for fileURL: URL, scan: Int = 300) async -> [NoteRevision] {
+        guard let vaultURL, let relPath = Self.relativePath(of: fileURL, in: vaultURL) else { return [] }
+        return await Task.detached(priority: .userInitiated) {
+            guard let repo = try? Repository.open(at: vaultURL),
+                  let commits = try? repo.log() else { return [] }
+            let components = relPath.split(separator: "/").map(String.init)
+
+            var revisions: [NoteRevision] = []
+            var walked = 0
+            for commit in commits {
+                guard walked < scan else { break }
+                walked += 1
+
+                guard let tree = try? commit.tree else { continue }
+                let current = Self.entryOID(at: components, in: tree, repo: repo)
+                guard current != nil else { continue }
+
+                let parentOID: OID?
+                if let parent = (try? commit.parents)?.first, let parentTree = try? parent.tree {
+                    parentOID = Self.entryOID(at: components, in: parentTree, repo: repo)
+                } else {
+                    parentOID = nil
+                }
+
+                if current != parentOID {
+                    revisions.append(NoteRevision(
+                        id: commit.id.hex,
+                        shortID: commit.id.abbreviated,
+                        summary: commit.summary,
+                        authorName: commit.author.name,
+                        date: commit.date
+                    ))
+                }
+            }
+            return revisions
+        }.value
+    }
+
+    /// The UTF-8 contents of `fileURL` as of commit `revisionID`, or nil if it
+    /// can't be resolved.
+    func content(ofRevision revisionID: String, for fileURL: URL) async -> String? {
+        guard let vaultURL, let relPath = Self.relativePath(of: fileURL, in: vaultURL) else { return nil }
+        return await Task.detached(priority: .userInitiated) { () -> String? in
+            guard let repo = try? Repository.open(at: vaultURL),
+                  let oid = try? OID(hex: revisionID),
+                  let commit: Commit = try? repo.show(id: oid),
+                  let tree = try? commit.tree else { return nil }
+            let components = relPath.split(separator: "/").map(String.init)
+            guard let blobOID = Self.entryOID(at: components, in: tree, repo: repo),
+                  let blob: Blob = try? repo.show(id: blobOID) else { return nil }
+            return String(data: blob.content, encoding: .utf8)
+        }.value
+    }
+
+    /// The blob OID at a slash-separated path within `tree`, walking subtrees.
+    /// Returns nil if any component is missing or the leaf isn't a file.
+    private nonisolated static func entryOID(at components: [String], in tree: Tree, repo: Repository) -> OID? {
+        guard let first = components.first,
+              let entry = tree.entries.first(where: { $0.name == first }) else { return nil }
+        if components.count == 1 {
+            return entry.type == .blob ? entry.id : nil
+        }
+        guard entry.type == .tree, let subtree: Tree = try? repo.show(id: entry.id) else { return nil }
+        return entryOID(at: Array(components.dropFirst()), in: subtree, repo: repo)
+    }
+
+    /// `fileURL` expressed relative to the vault root, using forward slashes, or
+    /// nil if it isn't inside the vault.
+    private nonisolated static func relativePath(of fileURL: URL, in vaultURL: URL) -> String? {
+        let file = fileURL.standardizedFileURL.path
+        var base = vaultURL.standardizedFileURL.path
+        if !base.hasSuffix("/") { base += "/" }
+        guard file.hasPrefix(base) else { return nil }
+        return String(file.dropFirst(base.count))
+    }
+
     /// Debounced local auto-commit; only ever commits, never pushes.
     func scheduleAutoCommit(message: String) {
         autoCommitTask?.cancel()

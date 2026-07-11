@@ -13,6 +13,7 @@ import AppKit
 struct MacContentView: View {
     @Environment(WorkspaceIndexer.self) private var indexer
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openWindow) private var openWindow
 
     /// Open notes as tabs, each with its own debounced-autosave editor.
     @State private var tabs = EditorTabs()
@@ -75,6 +76,9 @@ struct MacContentView: View {
 
     /// Distinct hashtags across the vault.
     private var tags: [String] { search.allTags() }
+
+    /// The vault's hashtags as a nested tree for the sidebar.
+    private var tagTree: [TagNode] { search.tagTree() }
 
     private var selectedNote: Note? {
         indexer.notes.first { $0.id == selectedNoteID }
@@ -195,15 +199,11 @@ struct MacContentView: View {
 
                     ScrollView {
                         VStack(alignment: .leading, spacing: 4) {
-                            ForEach(tags, id: \.self) { tag in
-                                Button {
+                            ForEach(tagTree) { node in
+                                TagTreeRow(node: node, selectedTag: selectedTag) { tag in
                                     selectedTag = tag
                                     searchText = ""
-                                } label: {
-                                    Label("#\(tag)", systemImage: "number")
-                                        .foregroundStyle(selectedTag == tag ? Color.accentColor : Color.primary)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
                     }
@@ -315,6 +315,8 @@ struct MacContentView: View {
                     editor: activeEditor,
                     backlinks: backlinks,
                     wikiResolver: wikiResolver,
+                    git: git,
+                    linkCandidates: indexer.notes.map(\.title),
                     onOpenWikiLink: openWikiLink,
                     onOpenNote: { selectedNoteID = $0.id }
                 )
@@ -347,7 +349,9 @@ struct MacContentView: View {
                 ForEach(taggedRows) { flatRow($0) }
             } else {
                 ForEach(tree) { node in
-                    VaultTreeRow(node: node, onDelete: delete)
+                    VaultTreeRow(node: node, onDelete: delete) { note in
+                        openWindow(value: note.fileURL)
+                    }
                 }
             }
         }
@@ -408,6 +412,12 @@ struct MacContentView: View {
         }
         .tag(row.note.id)
         .contextMenu {
+            Button {
+                openWindow(value: row.note.fileURL)
+            } label: {
+                Label("Open in New Window", systemImage: "macwindow.badge.plus")
+            }
+            Divider()
             Button(role: .destructive) {
                 delete(row.note)
             } label: {

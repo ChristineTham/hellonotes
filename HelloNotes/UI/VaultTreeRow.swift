@@ -13,6 +13,7 @@ import SwiftUI
 struct VaultTreeRow: View {
     let node: VaultTreeNode
     let onDelete: (Note) -> Void
+    let onOpenInNewWindow: (Note) -> Void
 
     var body: some View {
         if let note = node.note {
@@ -25,6 +26,12 @@ struct VaultTreeRow: View {
             }
             .tag(note.id)
             .contextMenu {
+                Button {
+                    onOpenInNewWindow(note)
+                } label: {
+                    Label("Open in New Window", systemImage: "macwindow.badge.plus")
+                }
+                Divider()
                 Button(role: .destructive) {
                     onDelete(note)
                 } label: {
@@ -34,7 +41,7 @@ struct VaultTreeRow: View {
         } else {
             DisclosureGroup {
                 ForEach(node.children ?? []) { child in
-                    VaultTreeRow(node: child, onDelete: onDelete)
+                    VaultTreeRow(node: child, onDelete: onDelete, onOpenInNewWindow: onOpenInNewWindow)
                 }
             } label: {
                 Label(node.name, systemImage: "folder")

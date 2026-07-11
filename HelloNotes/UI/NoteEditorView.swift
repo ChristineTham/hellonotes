@@ -23,14 +23,28 @@ struct NoteEditorView: View {
     /// Resolves which `[[wiki-link]]` targets exist (drives link clickability).
     var wikiResolver: VaultWikiLinkResolver
 
+    /// Git state for the vault — drives the version-history button.
+    var git: GitService
+
+    /// Candidate note titles offered by `[[wiki-link]]` autocomplete.
+    var linkCandidates: [String] = []
+
     /// Called when a `[[wiki-link]]` (or plain link) is clicked, with its target.
     var onOpenWikiLink: (String) -> Void = { _ in }
 
     /// Called to open a note from the backlinks panel.
     var onOpenNote: (Note) -> Void = { _ in }
 
+    @Environment(\.openWindow) private var openWindow
+
     @State private var showMermaid = false
     @State private var showOutline = false
+    @State private var showHistory = false
+
+    // Wiki-link autocomplete state, driven by the engine's inline-selection bus.
+    @State private var inlineSelection: InlineSelectionState?
+    @State private var caretRect: CGRect = .zero
+    @State private var pendingReplacement: InlineReplacementRequest?
 
     private var frontMatter: [FrontMatterField]? {
         MarkdownParsing.frontMatter(in: editor.text)
@@ -38,6 +52,53 @@ struct NoteEditorView: View {
 
     private var mermaidSources: [String] {
         MarkdownParsing.mermaidBlocks(in: editor.text)
+    }
+
+    /// Note-title suggestions for the active `[[wiki-link]]` the caret is in.
+    /// Empty when the caret isn't in a wiki-link, or the link already exactly
+    /// names an existing note (nothing left to complete).
+    private var wikiMatches: [String] {
+        guard inlineSelection?.kind == .wikiLink,
+              let raw = inlineSelection?.selection.placeholder else { return [] }
+        // The engine's placeholder spans the whole token, brackets included
+        // (e.g. "[[Id]]"); match against just the inner text.
+        var inner = raw
+        if inner.hasPrefix("[[") { inner.removeFirst(2) }
+        if inner.hasSuffix("]]") { inner.removeLast(2) }
+        let trimmed = inner.trimmingCharacters(in: .whitespaces)
+
+        let ranked: [String]
+        if trimmed.isEmpty {
+            ranked = Array(linkCandidates.prefix(8))
+        } else {
+            ranked = linkCandidates
+                .compactMap { title -> (String, Int)? in
+                    FuzzyMatch.score(query: trimmed, candidate: title).map { (title, $0) }
+                }
+                .sorted { $0.1 > $1.1 }
+                .prefix(8)
+                .map(\.0)
+        }
+
+        // Nothing to offer if the only match is exactly what's already typed.
+        if ranked.count == 1, ranked[0].localizedCaseInsensitiveCompare(trimmed) == .orderedSame {
+            return []
+        }
+        return ranked
+    }
+
+    /// Commit a wiki-link autocomplete choice through the engine's inline
+    /// replacement bus, which rewrites the `[[…]]` token and restores the caret.
+    private func acceptWikiCompletion(_ title: String) {
+        guard let selection = inlineSelection?.selection,
+              let documentId = editor.note?.fileURL.path else { return }
+        pendingReplacement = InlineReplacementRequest(
+            documentId: documentId,
+            selection: selection,
+            storageFragment: "[[\(title)]]",
+            isImageEmbedMode: false
+        )
+        inlineSelection = nil
     }
 
     var body: some View {
@@ -61,11 +122,23 @@ struct NoteEditorView: View {
 
                     NativeTextViewWrapper(
                         text: $editor.text,
+                        pendingInlineReplacement: $pendingReplacement,
                         configuration: configuration,
                         documentId: editor.note?.fileURL.path ?? "default",
                         onPasteImage: pasteImage,
-                        onLinkClick: onOpenWikiLink
+                        onLinkClick: onOpenWikiLink,
+                        onCaretRectChange: { caretRect = $0 },
+                        onInlineSelectionChange: { inlineSelection = $0 }
                     )
+                    .overlay(alignment: .topLeading) {
+                        if !wikiMatches.isEmpty {
+                            WikiLinkCompletionList(matches: wikiMatches, onSelect: acceptWikiCompletion)
+                                .offset(
+                                    x: max(4, caretRect.minX),
+                                    y: caretRect.maxY + 2
+                                )
+                        }
+                    }
 
                     if !backlinks.isEmpty {
                         Divider()
@@ -103,6 +176,24 @@ struct NoteEditorView: View {
                     }
                     ToolbarItem(placement: .automatic) {
                         Button {
+                            showHistory = true
+                        } label: {
+                            Label("Version History", systemImage: "clock.arrow.circlepath")
+                        }
+                        .help("Version history (Git)")
+                        .disabled(!git.status.isRepository || editor.note == nil)
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button {
+                            if let url = editor.note?.fileURL { openWindow(value: url) }
+                        } label: {
+                            Label("Open in New Window", systemImage: "macwindow.badge.plus")
+                        }
+                        .help("Open this note in a new window")
+                        .disabled(editor.note == nil)
+                    }
+                    ToolbarItem(placement: .automatic) {
+                        Button {
                             showMermaid = true
                         } label: {
                             Label("Diagrams", systemImage: "chart.xyaxis.line")
@@ -116,6 +207,13 @@ struct NoteEditorView: View {
                 }
                 .sheet(isPresented: $showMermaid) {
                     MermaidPreviewView(sources: mermaidSources)
+                }
+                .sheet(isPresented: $showHistory) {
+                    if let url = editor.note?.fileURL {
+                        NoteHistoryView(fileURL: url, git: git) { restored in
+                            editor.text = restored
+                        }
+                    }
                 }
             }
         }

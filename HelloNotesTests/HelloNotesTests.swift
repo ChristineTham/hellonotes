@@ -352,6 +352,41 @@ struct HelloNotesTests {
         #expect(search.notesTagged("urgent").map(\.title) == ["One"])
     }
 
+    @Test
+    func tagTreeNestsBySlash() {
+        let tree = TagTree.build(from: ["project/website", "project/hellonotes", "urgent"])
+        #expect(tree.map(\.name) == ["project", "urgent"])       // levels sorted
+
+        let project = tree.first { $0.name == "project" }
+        #expect(project?.fullPath == "project")
+        #expect(project?.children.map(\.name) == ["hellonotes", "website"])
+        #expect(project?.children.first?.fullPath == "project/hellonotes")
+        #expect(tree.first { $0.name == "urgent" }?.children.isEmpty == true)
+    }
+
+    @Test @MainActor
+    func notesTaggedMatchesNestedChildren() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+
+        try write("# A\n\n#project/hellonotes", to: vault.appendingPathComponent("A.md"))
+        try write("# B\n\n#project here", to: vault.appendingPathComponent("B.md"))
+        try write("# C\n\n#personal", to: vault.appendingPathComponent("C.md"))
+
+        let indexer = WorkspaceIndexer()
+        indexer.selectedVaultURL = vault
+        indexer.scanVault()
+        let search = VaultSearchModel()
+        await search.refresh(from: indexer.notes)
+
+        // Selecting the parent matches the parent tag and any nested child.
+        #expect(Set(search.notesTagged("project").map(\.title)) == ["A", "B"])
+        // Selecting the child matches only the child.
+        #expect(search.notesTagged("project/hellonotes").map(\.title) == ["A"])
+        // The tree nests the child under the parent.
+        #expect(search.tagTree().first { $0.name == "project" }?.children.map(\.name) == ["hellonotes"])
+    }
+
     // MARK: - GitService
 
     @Test @MainActor
@@ -376,6 +411,31 @@ struct HelloNotesTests {
         await git.commitAll(message: "Initial commit")
         #expect(git.lastError == nil)
         #expect(git.status.isClean)
+    }
+
+    @Test @MainActor
+    func gitNoteHistoryTracksFileRevisions() async throws {
+        let vault = try makeTempVault()
+        defer { try? FileManager.default.removeItem(at: vault) }
+        let noteURL = vault.appendingPathComponent("Note.md")
+
+        let git = GitService()
+        git.vaultURL = vault
+        await git.initializeRepository()
+
+        try write("# Version one", to: noteURL)
+        await git.commitAll(message: "First")
+        try write("# Version two", to: noteURL)
+        await git.commitAll(message: "Second")
+
+        let history = await git.history(for: noteURL)
+        #expect(history.count == 2)               // both commits changed the file
+        #expect(history.first?.summary == "Second")   // newest first
+
+        // The oldest revision's content matches the first version we wrote.
+        let oldest = try #require(history.last)
+        let content = await git.content(ofRevision: oldest.id, for: noteURL)
+        #expect(content == "# Version one")
     }
 
     // MARK: - Document statistics & export

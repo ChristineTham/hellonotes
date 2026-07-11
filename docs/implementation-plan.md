@@ -101,6 +101,18 @@ Verified live on macOS: statistics compute correctly, the outline lists all head
 Deferred, with rationale:
 - **Outline jump-to-section is display-only.** MarkdownEngine's find bus *does* locate the heading (confirmed: it reports a match), but its scroll-into-view is a no-op for our full-width (non-reading-column) editor — TextKit 2 doesn't lay out off-screen content, so `scrollRangeToVisible` can't reach it. The engine only scrolls reliably in its fixed-width **reading-column** mode, which clips text when the window is narrower than the column. Rather than impose a reading column, the outline stays a read-only structure map. (Same root cause as the Milestone 3 "scroll-to-heading" deferral.) Revisit if MarkdownEngine adds a public scroll-to-range API.
 
+## Milestone 8 — Organization & navigation (Bear-inspired)  ✅ (done)  [P2]
+Four features surveyed from [Bear](https://bear.app/faq/) and approved for inclusion:
+- ✅ **Nested tags** (`Core/TagTree` + `UI/TagTreeRow`): slash-separated tags (`#project/hellonotes`) render as a collapsible sidebar tree, and selecting a parent matches the parent **and every descendant** (`VaultSearchModel.notesTagged` now prefix-matches). The existing tag regex already captured `/`, so no re-parsing was needed.
+- ✅ **Git-powered version history** (`GitService.history` / `content(ofRevision:)` + `UI/NoteHistoryView`): the editor's history button lists the commits that changed the open note (its blob differs from the parent's), previews any revision's contents, and **restores** one by writing it back through the editor (so it autosaves and stays undoable). Walks the file's blob OID down each commit's tree via `Repository.show(id:)`.
+- ✅ **Wiki-link autocomplete** (`UI/WikiLinkCompletionList` + `NoteEditorView`): typing inside `[[…]]` shows a caret-anchored note picker (fuzzy-matched titles); clicking a row commits the choice through the engine's native inline-replacement bus (`InlineReplacementRequest`), which rewrites the token and restores the caret. Uses the engine's `onInlineSelectionChange` / `onCaretRectChange` hooks.
+- ✅ **Open in a new window** (`UI/NoteWindowView` + a `WindowGroup(for: URL.self)`): open any note in its own standalone editor window (from the note-list context menu or the editor toolbar); wiki-link clicks there open their target in another window.
+
+Verified live on macOS: the tag tree expands and parent-selection filters by descendants; version history lists/previews/restores commits; the `[[` picker appears at the caret and inserts the chosen link; and standalone windows open and edit independently. `tagTreeNestsBySlash()`, `notesTaggedMatchesNestedChildren()`, and `gitNoteHistoryTracksFileRevisions()` cover the logic off-UI.
+
+Deferred, with rationale:
+- **Tag autocomplete** (the `#` half of the approved "wiki-link & tag autocomplete") is not implemented. The engine surfaces inline-token callbacks (`onInlineSelectionChange`) and a caret rect **only** for `[[wiki-links]]` / `![[image-embeds]]`, not `#tags`, and exposes no caret character offset to the host — so there's no reliable way to detect a `#partial` token or anchor a popup to it. Revisit if MarkdownEngine adds a tag-token callback or a caret-offset hook. (Same class as the Milestone 3 "scroll-to-heading" and Milestone 7 "outline jump" deferrals.)
+
 ---
 
 ## Sequencing notes

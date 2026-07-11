@@ -21,5 +21,15 @@ struct HelloNotesApp: App {
                 .environment(indexer)
             #endif
         }
+
+        #if os(macOS)
+        // Standalone single-note windows, opened via `openWindow(value: url)`.
+        WindowGroup(for: URL.self) { $url in
+            if let url {
+                NoteWindowView(fileURL: url)
+                    .environment(indexer)
+            }
+        }
+        #endif
     }
 }

@@ -32,6 +32,7 @@ Early development. Implemented so far:
 - ✅ **Native rendering (Milestone 5):** image paste → `assets/` folder, a front-matter panel, and native Mermaid diagram preview (no WebView).
 - ✅ **iOS & iPadOS shell (Milestone 6):** an adaptive three-column `NavigationSplitView` — sidebar (tags) + note list + editor on iPad landscape (like macOS), collapsing to a push stack on iPhone — sharing the Core/State layers (browse/read/edit companion).
 - ✅ **Writing companions (Lettera-inspired):** a document **statistics** panel (words, characters, paragraphs, reading time), a read-only **outline** (table of contents) for orientation, **HTML/PDF export**, and **multi-tab editing** (open several notes side-by-side, macOS).
+- ✅ **Organization & navigation (Bear-inspired):** **nested tags** (`#parent/child`) as a sidebar tree where selecting a parent matches all descendants; **Git-powered version history** (browse a note's past commits and restore any of them); **wiki-link autocomplete** (type `[[` for a caret-anchored note picker); and **open a note in its own window** (macOS).
 - 🚧 Next: a richer iOS editor, pull/merge, and an in-app git identity.
 
 Roadmap and milestones: [docs/implementation-plan.md](docs/implementation-plan.md).

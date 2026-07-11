@@ -65,11 +65,23 @@ final class VaultSearchModel {
         return unique.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
-    /// Notes tagged with `tag` (case-insensitive).
+    /// The vault's hashtags as a hierarchical tree (`a/b` nests `b` under `a`).
+    func tagTree() -> [TagNode] {
+        TagTree.build(from: allTags())
+    }
+
+    /// Notes tagged with `tag` or any of its nested children (case-insensitive):
+    /// selecting `project` also matches notes tagged `project/hellonotes`.
     func notesTagged(_ tag: String) -> [Note] {
         let needle = tag.lowercased()
+        let prefix = needle + "/"
         return entries
-            .filter { $0.tags.contains { $0.lowercased() == needle } }
+            .filter { entry in
+                entry.tags.contains { t in
+                    let lower = t.lowercased()
+                    return lower == needle || lower.hasPrefix(prefix)
+                }
+            }
             .map(\.note)
     }
 
