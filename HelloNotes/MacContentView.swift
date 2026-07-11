@@ -414,6 +414,7 @@ struct MacContentView: View {
                     wikiResolver: wikiResolver,
                     git: git,
                     linkCandidates: search.linkTargets(),
+                    tagCandidates: search.allTags(),
                     headingProvider: { search.headings(forName: $0) },
                     onOpenWikiLink: openWikiLink,
                     onOpenNote: { selectedNoteID = $0.id },

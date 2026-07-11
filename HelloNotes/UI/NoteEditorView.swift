@@ -35,6 +35,9 @@ struct NoteEditorView: View {
     /// Candidate note titles/aliases offered by `[[wiki-link]]` autocomplete.
     var linkCandidates: [String] = []
 
+    /// Existing vault tags (without `#`) offered by `#tag` autocomplete.
+    var tagCandidates: [String] = []
+
     /// Headings of the note with the given name, for `[[Note#heading]]` completion.
     var headingProvider: (String) -> [String] = { _ in [] }
 
@@ -139,6 +142,49 @@ struct NoteEditorView: View {
         }
     }
 
+    /// Completions for whichever inline token the caret is in — `[[wiki-links]]`
+    /// or `#tags`. Drives the shared completion popup.
+    private var activeCompletions: [WikiCompletion] {
+        switch inlineSelection?.kind {
+        case .wikiLink: return wikiMatches
+        case .tag: return tagMatches
+        default: return []
+        }
+    }
+
+    /// Existing-tag suggestions for the `#tag` the caret is typing.
+    private var tagMatches: [WikiCompletion] {
+        guard inlineSelection?.kind == .tag,
+              let raw = inlineSelection?.selection.placeholder else { return [] }
+        // The engine's placeholder includes the leading `#`; match on the rest.
+        let partial = raw.hasPrefix("#") ? String(raw.dropFirst()) : raw
+
+        let ranked: [String]
+        if partial.isEmpty {
+            ranked = Array(tagCandidates.prefix(8))
+        } else {
+            ranked = tagCandidates
+                .compactMap { tag in FuzzyMatch.score(query: partial, candidate: tag).map { (tag, $0) } }
+                .sorted { $0.1 > $1.1 }
+                .prefix(8)
+                .map(\.0)
+        }
+        // Nothing to offer if the only match is exactly what's already typed.
+        if ranked.count == 1, ranked[0].localizedCaseInsensitiveCompare(partial) == .orderedSame {
+            return []
+        }
+        return ranked.map { WikiCompletion(label: "#\($0)", insert: $0, isHeading: false) }
+    }
+
+    /// Commit whichever completion kind is active.
+    private func acceptCompletion(_ completion: WikiCompletion) {
+        if inlineSelection?.kind == .tag {
+            acceptTagCompletion(completion)
+        } else {
+            acceptWikiCompletion(completion)
+        }
+    }
+
     /// Commit a wiki-link autocomplete choice through the engine's inline
     /// replacement bus, which rewrites the `[[…]]` token and restores the caret.
     private func acceptWikiCompletion(_ completion: WikiCompletion) {
@@ -149,6 +195,21 @@ struct NoteEditorView: View {
             selection: selection,
             storageFragment: "[[\(completion.insert)]]",
             isImageEmbedMode: false
+        )
+        inlineSelection = nil
+    }
+
+    /// Commit a `#tag` completion: replace the partial tag with the full tag and
+    /// a trailing space (literal mode — no `[[…]]` wrapping).
+    private func acceptTagCompletion(_ completion: WikiCompletion) {
+        guard let selection = inlineSelection?.selection,
+              let documentId = editor.note?.fileURL.path else { return }
+        pendingReplacement = InlineReplacementRequest(
+            documentId: documentId,
+            selection: selection,
+            storageFragment: "#\(completion.insert) ",
+            isImageEmbedMode: false,
+            isLiteralMode: true
         )
         inlineSelection = nil
     }
@@ -198,8 +259,9 @@ struct NoteEditorView: View {
                         onInlineSelectionChange: { inlineSelection = $0 }
                     )
                     .overlay(alignment: .topLeading) {
-                        if !wikiMatches.isEmpty {
-                            WikiLinkCompletionList(matches: wikiMatches, onSelect: acceptWikiCompletion)
+                        let matches = activeCompletions
+                        if !matches.isEmpty {
+                            WikiLinkCompletionList(matches: matches, onSelect: acceptCompletion)
                                 .offset(
                                     x: max(4, caretRect.minX),
                                     y: caretRect.maxY + 2
