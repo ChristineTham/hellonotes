@@ -93,6 +93,10 @@ final class WorkspaceIndexer {
 
     /// Adopt a vault folder: remember it for next launch and index it.
     func setVault(_ url: URL) {
+        // On sandboxed platforms (iOS) a user-selected folder must have its
+        // security scope started before it can be read. Harmless elsewhere;
+        // held for the app's lifetime (the vault stays open).
+        _ = url.startAccessingSecurityScopedResource()
         selectedVaultURL = url
         persistVaultBookmark(for: url)
         scanVault()
@@ -146,6 +150,7 @@ final class WorkspaceIndexer {
             bookmarkDataIsStale: &isStale
         ) else { return }
 
+        _ = url.startAccessingSecurityScopedResource()
         selectedVaultURL = url
         scanVault()
 

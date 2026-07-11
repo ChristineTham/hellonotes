@@ -75,9 +75,14 @@ Still deferred, with rationale:
 - **Inline Mermaid in the editor** — MarkdownEngine exposes no custom code-block render hook, so diagrams preview in a sheet rather than rendering inline. Inline would require an upstream feature or a fork.
 - **Hiding raw front matter in the editor** — MarkdownEngine renders the `---` block as text; the panel is an additional summary. Suppressing the raw block needs an editor hook we don't have.
 
-## Milestone 6 — iOS shell (v0.4)  [P2]
-- Extract Core/State into platform-agnostic form.
-- `iOSContentView` with `NavigationStack`; verify shared models compile for iOS.
+## Milestone 6 — iOS shell (v0.4)  ✅ (done)  [P2]
+- ✅ Made the app build for iOS: MarkdownEngine is macOS-only, so its three products are now linked with a `platformFilters = (macos)` filter in the project; the iOS build links SwiftGitX / beautiful-mermaid / swift-markdown (all iOS-capable) but not MarkdownEngine.
+- ✅ `iOSContentView` — a push-based `NavigationStack`: vault selection via `.fileImporter` (folder), a searchable note list, and a note detail screen. Shares `Note`, `WorkspaceIndexer`, and `EditorModel` with macOS.
+- ✅ iOS editor is a plain-text `TextEditor` (MarkdownEngine's TextKit 2 editor is AppKit-only) backed by the **same** `EditorModel` load / dirty / debounced-autosave logic.
+- ✅ Security-scoped resource access for the sandboxed iOS file system (`startAccessingSecurityScopedResource` on vault open/restore).
+- Verified in the iOS Simulator: pick a folder → notes list → open a note → edit → autosave persists to disk.
+
+iOS scope note: macOS-only features (live styling / code / math via MarkdownEngine, FSEvents watching, Open Quickly, folder tree, tags, Git UI, image paste, Mermaid preview) are not on iOS yet — it is a browse / read / plain-text-edit companion for now. A richer iOS editor (UITextView / TextKit 2) is a future milestone.
 
 ---
 

@@ -17,7 +17,7 @@ struct HelloNotesApp: App {
             MacContentView()
                 .environment(indexer)
             #elseif os(iOS)
-            Text("iOS coming soon")
+            iOSContentView()
                 .environment(indexer)
             #endif
         }
