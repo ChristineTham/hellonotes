@@ -37,7 +37,14 @@
   (macOS 26+, gated by `canImport` + `@available`): Summarize, Suggest Tags, and Suggest Links
   (the latter two via `@Generable` guided generation), surfaced through an Intelligence sheet.
   Editor-independent, as planned. Verified live on-device.
-- Workflow: patches land on `hellonotes-patches`; open upstream PRs to shrink the delta.
+- **Upstream PRs opened** (to `nodes-app/swift-markdown-engine`, each a focused branch off
+  current `main`): [#91 scroll fix](https://github.com/nodes-app/swift-markdown-engine/pull/91),
+  [#92 DiagramRenderer](https://github.com/nodes-app/swift-markdown-engine/pull/92),
+  [#93 find & replace](https://github.com/nodes-app/swift-markdown-engine/pull/93),
+  [#94 tag token](https://github.com/nodes-app/swift-markdown-engine/pull/94),
+  [#95 callouts/comments/front-matter](https://github.com/nodes-app/swift-markdown-engine/pull/95).
+  As they merge, drop them from `hellonotes-patches` to shrink the fork delta.
+- Workflow: patches land on `hellonotes-patches`; upstream PRs (above) shrink the delta.
 
 Every editor-layer item in [unimplemented.md](unimplemented.md) is blocked by a missing
 hook in **[swift-markdown-engine](https://github.com/nodes-app/swift-markdown-engine)**
