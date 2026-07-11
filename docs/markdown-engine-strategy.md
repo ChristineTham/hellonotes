@@ -17,8 +17,11 @@
   `MermaidDiagramRenderer` so ` ```mermaid ` fences render inline as images and toggle to
   source on caret-enter (verified live). Same `appendRenderedStandaloneBlock` machinery as
   block LaTeX. Diagrams also theme-match the editor and clamp wide diagrams to the reading
-  column (fork @ `d37b913`). Next: Fix #3 (find & replace) / #4 (tag autocomplete), or the
-  Foundation Models track.
+  column (fork @ `d37b913`).
+- **Fix #3 landed — find & replace.** The fork adds `replaceCurrent` / `replaceAll` bus
+  handlers on top of the existing display-coordinate find (fork @ `7221f73`); HelloNotes
+  ships a ⌘F find/replace bar (live count, next/prev, replace, replace-all, single-step
+  undo). Verified live. Next: Fix #4 (tag autocomplete), or the Foundation Models track.
 - Workflow: patches land on `hellonotes-patches`; open upstream PRs to shrink the delta.
 
 Every editor-layer item in [unimplemented.md](unimplemented.md) is blocked by a missing
