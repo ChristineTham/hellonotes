@@ -20,15 +20,15 @@ Each item is tagged by what's blocking it:
 These share a root cause: MarkdownEngine's public surface doesn't expose the hook
 we'd need. Several features have been shaped around these walls.
 
-- 🧱 **Scroll-to-section / outline jump / heading links** *(Milestones 3, 7 & 9)*
-  The outline (table of contents) is **display-only**, and a `[[Note#heading]]` link
-  opens the note at the top rather than scrolling to the heading. The engine's find
-  bus locates a heading (it reports a match), but its scroll-into-view is a no-op for
-  our full-width editor — TextKit 2 doesn't lay out off-screen content, so
-  `scrollRangeToVisible` can't reach it. The engine only scrolls reliably in its
-  fixed-width **reading-column** mode, which clips text when the window is narrower
-  than the column. We chose full-width over imposing a reading column. **Unblock:** a
-  public scroll-to-range API, or a reading-column layout we're willing to adopt.
+- ✅ **Scroll-to-section / outline jump** *(Milestones 3, 7 & 9)* — **RESOLVED via the fork.**
+  Fixed in [`ChristineTham/swift-markdown-engine@hellonotes-patches`](https://github.com/ChristineTham/swift-markdown-engine)
+  (see [markdown-engine-strategy.md](markdown-engine-strategy.md)): the engine's default
+  scroll path now uses the TextKit 2 fragment layout universally, so find/jump reaches
+  off-screen matches. The outline **jumps to a heading and scrolls** to it (restored and
+  verified live).
+  - 🛠️ *Remaining:* `[[Note#heading]]` **link clicks** still open the note at the top —
+    a small host-side follow-up: after navigating, post the same `.hnEditorFindQuery` for
+    the heading so it scrolls too.
 
 - 🧱 **Note transclusion / embeds `![[Note]]` / `![[Note#heading]]`** *(Obsidian review)*
   Rendering another note (or a heading/block of it) inline. Image embeds `![[image]]`

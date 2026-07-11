@@ -138,6 +138,8 @@ Used by the Core layer for structural parsing that the editor doesn't give us â€
 | elk-swift, swift-cmark, libgit2, swift-collections | Transitive deps | Resolved | Transitive |
 
 > **v0.1 note:** MarkdownEngine is macOS-only (AppKit/TextKit 2), so its three products carry a `platformFilters = (macos)` build-file filter; the iOS target links everything else (SwiftGitX, swift-markdown, beautiful-mermaid) and uses a plain-text editor. This keeps a single multiplatform target building for both OSes.
+>
+> **Fork:** MarkdownEngine is consumed from our fork [`ChristineTham/swift-markdown-engine`](https://github.com/ChristineTham/swift-markdown-engine) (branch `hellonotes-patches`, based on upstream `0.8.0`) so we can land editor fixes upstream can't yet give us â€” starting with a scroll-to-range fix that makes the outline jump-to-heading work. Rationale, per-limitation plan, and Apple Intelligence notes: [markdown-engine-strategy.md](markdown-engine-strategy.md).
 
 ## 7. Module map (target code, v0.1)
 

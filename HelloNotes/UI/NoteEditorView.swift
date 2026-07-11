@@ -212,7 +212,7 @@ struct NoteEditorView: View {
                         }
                         .help("Outline & statistics")
                         .popover(isPresented: $showOutline, arrowEdge: .top) {
-                            OutlineView(text: editor.text)
+                            OutlineView(text: editor.text, onSelectHeading: jumpToHeading)
                         }
                     }
                     ToolbarItem(placement: .automatic) {
@@ -282,6 +282,22 @@ struct NoteEditorView: View {
     private func pasteImage(_ pasteboard: NSPasteboard) -> String? {
         guard let noteURL = editor.note?.fileURL else { return nil }
         return ImagePaste.saveImage(from: pasteboard, nextTo: noteURL, timestamp: .now)
+    }
+
+    // MARK: - Outline navigation
+
+    /// Scroll the editor to a heading by asking the engine to find its title in
+    /// the displayed text, then clear the transient highlight shortly after.
+    private func jumpToHeading(_ heading: DocumentHeading) {
+        showOutline = false
+        NotificationCenter.default.post(
+            name: .hnEditorFindQuery,
+            object: nil,
+            userInfo: ["query": heading.title]
+        )
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            NotificationCenter.default.post(name: .hnEditorClearHighlights, object: nil)
+        }
     }
 
     // MARK: - Conflict banner
@@ -398,6 +414,8 @@ struct NoteEditorView: View {
         config.services.syntaxHighlighter = Self.syntaxHighlighter
         config.services.latex = Self.latexRenderer
         config.services.wikiLinks = wikiResolver
+        config.services.bus.findQuery = .hnEditorFindQuery
+        config.services.bus.findClearHighlights = .hnEditorClearHighlights
         return config
     }
 }

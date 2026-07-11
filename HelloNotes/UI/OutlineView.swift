@@ -8,10 +8,19 @@
 #if os(macOS)
 import SwiftUI
 
-/// A popover showing the note's statistics and an outline (table of contents)
-/// for orientation. The outline is a read-only map of the document's headings.
+extension Notification.Name {
+    /// Host → engine: scroll to (and briefly highlight) the first match of a
+    /// query in the editor's displayed text. Used for table-of-contents jumps.
+    static let hnEditorFindQuery = Notification.Name("hn.editor.findQuery")
+    /// Host → engine: clear find highlights.
+    static let hnEditorClearHighlights = Notification.Name("hn.editor.clearHighlights")
+}
+
+/// A popover showing the note's statistics and an outline (table of contents).
+/// Clicking a heading jumps the editor to that section.
 struct OutlineView: View {
     let text: String
+    var onSelectHeading: (DocumentHeading) -> Void = { _ in }
 
     private var stats: DocumentStatistics { DocumentAnalyzer.analyze(text) }
     private var headings: [DocumentHeading] { MarkdownParsing.headings(in: text) }
@@ -44,12 +53,18 @@ struct OutlineView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 1) {
                             ForEach(Array(headings.enumerated()), id: \.offset) { _, heading in
-                                Text(heading.title)
-                                    .font(heading.level == 1 ? .callout.weight(.semibold) : .callout)
-                                    .lineLimit(1)
-                                    .padding(.leading, CGFloat(heading.level - 1) * 14)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 2)
+                                Button {
+                                    onSelectHeading(heading)
+                                } label: {
+                                    Text(heading.title)
+                                        .font(heading.level == 1 ? .callout.weight(.semibold) : .callout)
+                                        .lineLimit(1)
+                                        .padding(.leading, CGFloat(heading.level - 1) * 14)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(.rect)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.vertical, 2)
                             }
                         }
                     }
