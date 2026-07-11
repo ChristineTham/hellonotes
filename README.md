@@ -11,6 +11,7 @@ HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps li
 | [docs/architecture.md](docs/architecture.md) | 4-layer architecture + evaluation of every Swift package (alternatives & recommendations) |
 | [docs/implementation-plan.md](docs/implementation-plan.md) | Milestone-by-milestone build sequence |
 | [docs/unimplemented.md](docs/unimplemented.md) | Deferred / not-yet-built items, with reasons and what would unblock each |
+| [docs/production.md](docs/production.md) | Step-by-step runbook to productionise the app and ship it to the Mac App Store (copy-paste field values included) |
 
 ## ✨ Core features (v0.1)
 - **Local-first** — no CoreData/SwiftData/iCloud store; your `.md` files are the truth.
