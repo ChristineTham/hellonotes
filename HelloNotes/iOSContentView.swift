@@ -10,19 +10,19 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// The iOS / iPadOS shell. A three-column `NavigationSplitView` mirrors the
-/// macOS app: a navigation sidebar (collection + All Notes + `#tags` filter), the
-/// note list, and the editor. On iPad landscape all three columns show at once
-/// (like macOS); on iPad portrait the sidebar tucks behind a toggle; on iPhone
-/// it collapses to a push stack. Shares `Note`, `Library`,
-/// `EditorModel`, and `CollectionSearchModel` with macOS. MarkdownEngine is
-/// macOS-only (AppKit/TextKit 2), so the mobile editor is a plain-text
-/// `TextEditor` backed by the same autosave logic.
+/// macOS app: a navigation sidebar listing every open collection (plus the
+/// focused collection's All Notes + `#tags` filter), the note list, and the
+/// editor. On iPad landscape all three columns show at once (like macOS); on
+/// iPad portrait the sidebar tucks behind a toggle; on iPhone it collapses to a
+/// push stack. Shares `Note`, `Library`, `Collection`, `EditorModel`, and
+/// `CollectionSearchModel` with macOS. MarkdownEngine is macOS-only
+/// (AppKit/TextKit 2), so the mobile editor is a plain-text `TextEditor` backed
+/// by the same autosave logic.
 struct iOSContentView: View {
     @Environment(Library.self) private var library
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var editor = EditorModel()
-    @State private var search = CollectionSearchModel()
     @State private var showImporter = false
     @State private var searchText = ""
     @State private var selectedNoteID: Note.ID?
@@ -32,14 +32,20 @@ struct iOSContentView: View {
     /// filter sidebar.
     @State private var preferredCompactColumn: NavigationSplitViewColumn = .content
 
-    private var tags: [String] { search.allTags() }
+    private var focused: Collection? { library.focused }
 
+    /// Tags of the focused collection.
+    private var tags: [String] { focused?.search.allTags() ?? [] }
+
+    /// Notes shown in the list — the focused collection's notes, filtered by the
+    /// active tag or the search field.
     private var displayedNotes: [Note] {
+        guard let focused else { return [] }
         if let selectedTag {
-            return search.notesTagged(selectedTag)
+            return focused.search.notesTagged(selectedTag)
         }
-        guard !searchText.isEmpty else { return (library.focused?.notes ?? []) }
-        return (library.focused?.notes ?? []).filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+        guard !searchText.isEmpty else { return focused.notes }
+        return focused.notes.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
     }
 
     var body: some View {
@@ -51,22 +57,24 @@ struct iOSContentView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
-        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.folder]) { result in
-            if case let .success(url) = result {
-                Task { await library.open(url: url) }
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
+            if case let .success(urls) = result {
+                Task { await library.open(urls: urls) }
             }
         }
         .task {
             if library.isEmpty {
                 await library.restore()
             }
-            await search.refresh(from: (library.focused?.notes ?? []))
         }
-        .onChange(of: (library.focused?.notes ?? [])) { _, notes in
-            Task { await search.refresh(from: notes) }
+        .onChange(of: library.focusedID) { _, _ in
+            // Switching collections resets the in-collection filter/selection.
+            selectedTag = nil
+            searchText = ""
+            selectedNoteID = nil
         }
         .onChange(of: selectedNoteID) { _, newID in
-            let note = (library.focused?.notes ?? []).first { $0.id == newID }
+            let note = library.allNotes.first { $0.id == newID }
             Task { await editor.open(note) }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -86,6 +94,12 @@ struct iOSContentView: View {
                     Button("Open Collection") { showImporter = true }
                 }
             } else {
+                Section("Collections") {
+                    ForEach(library.collections) { collection in
+                        collectionRow(collection)
+                    }
+                }
+
                 Section {
                     filterRow(title: "All Notes", systemImage: "tray.full", isSelected: selectedTag == nil) {
                         selectedTag = nil
@@ -104,13 +118,13 @@ struct iOSContentView: View {
                 }
             }
         }
-        .navigationTitle(library.focused?.name ?? "HelloNotes")
+        .navigationTitle("Library")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     if !library.isEmpty {
                         Button {
-                            if let note = library.focused?.createNote() {
+                            if let note = focused?.createNote() {
                                 selectedNoteID = note.id
                             }
                         } label: {
@@ -120,11 +134,38 @@ struct iOSContentView: View {
                     Button {
                         showImporter = true
                     } label: {
-                        Label("Open Collection", systemImage: "folder")
+                        Label("Open Collection", systemImage: "folder.badge.plus")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+            }
+        }
+    }
+
+    /// A collection row: tap to focus it; swipe to close.
+    private func collectionRow(_ collection: Collection) -> some View {
+        Button {
+            library.focus(collection)
+        } label: {
+            HStack {
+                Label(collection.name, systemImage: "books.vertical")
+                    .fontWeight(collection.id == focused?.id ? .semibold : .regular)
+                Spacer()
+                Text("\(collection.notes.count)")
+                    .foregroundStyle(.secondary)
+                if collection.id == focused?.id {
+                    Image(systemName: "checkmark").foregroundStyle(.tint)
+                }
+            }
+            .contentShape(.rect)
+        }
+        .foregroundStyle(.primary)
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) {
+                library.close(collection)
+            } label: {
+                Label("Close", systemImage: "xmark.circle")
             }
         }
     }
@@ -151,9 +192,9 @@ struct iOSContentView: View {
         Group {
             if library.isEmpty {
                 ContentUnavailableView {
-                    Label("No Collection", systemImage: "folder")
+                    Label("No Collections", systemImage: "folder")
                 } description: {
-                    Text("Choose a folder of Markdown files to begin.")
+                    Text("Open one or more folders of Markdown files to begin.")
                 } actions: {
                     Button("Open Collection") { showImporter = true }
                         .buttonStyle(.borderedProminent)
@@ -169,15 +210,15 @@ struct iOSContentView: View {
                     }
                     .tag(note.id)
                 }
-                .searchable(text: $searchText, prompt: "Search notes")
+                .searchable(text: $searchText, prompt: "Search \(focused?.name ?? "notes")")
                 .overlay {
-                    if (library.focused?.notes ?? []).isEmpty {
+                    if (focused?.notes ?? []).isEmpty {
                         ContentUnavailableView("No Notes", systemImage: "doc.text")
                     }
                 }
             }
         }
-        .navigationTitle(selectedTag.map { "#\($0)" } ?? "Notes")
+        .navigationTitle(selectedTag.map { "#\($0)" } ?? (focused?.name ?? "Notes"))
         .navigationBarTitleDisplayMode(.inline)
     }
 
