@@ -136,6 +136,63 @@ enum GitHostAPI {
         }
     }
 
+    // MARK: - Create repository
+
+    /// Create a new repository on `account`'s hosting service and return it
+    /// (with the HTTPS clone URL). The repo is created empty (no auto-init) so
+    /// the local first commit can be pushed to it.
+    static func createRepository(named name: String, isPrivate: Bool,
+                                 for account: GitAccount, token: String) async throws -> RemoteRepository {
+        switch account.service {
+        case .github:
+            let base = account.host.lowercased() == "github.com"
+                ? "https://api.github.com" : "https://\(account.host)/api/v3"
+            var request = try postRequest("\(base)/user/repos")
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+            request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "name": name, "private": isPrivate, "auto_init": false,
+            ])
+            struct GHRepo: Decodable { let name: String; let full_name: String; let clone_url: String; let `private`: Bool }
+            let r: GHRepo = try await sendJSON(request)
+            return RemoteRepository(name: r.name, fullName: r.full_name, cloneURL: r.clone_url,
+                                    description: nil, isPrivate: r.private, updatedAt: nil)
+
+        case .gitlab:
+            guard !account.host.isEmpty else { throw APIError.unsupportedHost }
+            var request = try postRequest("https://\(account.host)/api/v4/projects")
+            request.setValue(token, forHTTPHeaderField: "PRIVATE-TOKEN")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "name": name, "visibility": isPrivate ? "private" : "public",
+            ])
+            struct GLRepo: Decodable { let name: String; let path_with_namespace: String; let http_url_to_repo: String; let visibility: String? }
+            let r: GLRepo = try await sendJSON(request)
+            return RemoteRepository(name: r.name, fullName: r.path_with_namespace, cloneURL: r.http_url_to_repo,
+                                    description: nil, isPrivate: r.visibility != "public", updatedAt: nil)
+
+        case .gitea, .custom:
+            guard !account.host.isEmpty else { throw APIError.unsupportedHost }
+            var request = try postRequest("https://\(account.host)/api/v1/user/repos")
+            request.setValue("token \(token)", forHTTPHeaderField: "Authorization")
+            request.httpBody = try JSONSerialization.data(withJSONObject: [
+                "name": name, "private": isPrivate, "auto_init": false,
+            ])
+            struct GTRepo: Decodable { let name: String; let full_name: String; let clone_url: String; let `private`: Bool }
+            let r: GTRepo = try await sendJSON(request)
+            return RemoteRepository(name: r.name, fullName: r.full_name, cloneURL: r.clone_url,
+                                    description: nil, isPrivate: r.private, updatedAt: nil)
+        }
+    }
+
+    private static func postRequest(_ urlString: String) throws -> URLRequest {
+        guard let url = URL(string: urlString) else { throw APIError.unsupportedHost }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        return request
+    }
+
     // MARK: - HTTP
 
     private static func getJSON<T: Decodable>(_ request: URLRequest) async throws -> T {
@@ -160,6 +217,15 @@ enum GitHostAPI {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
             throw APIError.transport("Unexpected response from the server.")
+        }
+    }
+
+    /// POST + decode, with a friendlier message when the name already exists.
+    private static func sendJSON<T: Decodable>(_ request: URLRequest) async throws -> T {
+        do {
+            return try await getJSON(request)
+        } catch APIError.http(422), APIError.http(400), APIError.http(409) {
+            throw APIError.transport("Couldn't create the repository — a repository with that name may already exist.")
         }
     }
 

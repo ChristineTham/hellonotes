@@ -288,6 +288,61 @@ final class GitService {
         }
     }
 
+    // MARK: - Create
+
+    /// Create a brand-new local repository at `directory`: initialise it, add a
+    /// starter `README.md`, and make the first commit. If `remoteURL` is given,
+    /// wire it up as `origin` (embedding `account`/`token` credentials for HTTPS)
+    /// and push. Returns the created folder URL, or nil on failure. Independent
+    /// of any open collection; the caller opens the result as a collection.
+    func createRepository(named name: String, in parentDirectory: URL, remoteURL: URL? = nil,
+                          account: GitAccount? = nil, token: String? = nil) async -> URL? {
+        let safeName = name.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "/", with: "-")
+        guard !safeName.isEmpty else { lastError = "Enter a repository name."; return nil }
+        let directory = parentDirectory.appendingPathComponent(safeName, isDirectory: true)
+
+        if let contents = try? FileManager.default.contentsOfDirectory(atPath: directory.path), !contents.isEmpty {
+            lastError = "“\(safeName)” already exists and isn't empty."
+            return nil
+        }
+
+        let pushURL: URL? = {
+            guard let remoteURL else { return nil }
+            if let account, let token,
+               let authed = GitRemoteURL.authenticated(remoteURL, username: account.username, token: token) {
+                return authed
+            }
+            return remoteURL
+        }()
+
+        isBusy = true
+        lastError = nil
+        defer { isBusy = false }
+        do {
+            try await Task.detached(priority: .userInitiated) {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let readme = directory.appendingPathComponent("README.md")
+                try Data("# \(safeName)\n".utf8).write(to: readme)
+
+                let repo = try Repository(at: directory, createIfNotExists: true)
+                Self.ensureCommitIdentity(repo)
+                try repo.add(path: "README.md")
+                _ = try repo.commit(message: "Initial commit")
+
+                if let pushURL {
+                    try repo.remote.add(named: "origin", at: pushURL)
+                    try await repo.push()
+                }
+            }.value
+            lastMessage = remoteURL == nil ? "Created “\(safeName)”" : "Created and pushed “\(safeName)”"
+            return directory
+        } catch {
+            lastError = "Couldn't create the repository: \(error)"
+            try? FileManager.default.removeItem(at: directory)
+            return nil
+        }
+    }
+
     // MARK: - Clone
 
     /// Clone `urlString` into a new folder under `parentDirectory` and return the

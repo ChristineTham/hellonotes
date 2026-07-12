@@ -40,6 +40,10 @@ final class Library {
     /// reconcile open editors and revalidate the selection.
     var onExternalChange: @MainActor () -> Void = {}
 
+    /// Called with a collection's root URL each time it's opened — wired to the
+    /// recents store.
+    var onOpened: @MainActor (URL) -> Void = { _ in }
+
     // MARK: - Focus
 
     func focus(_ collection: Collection) { focusedID = collection.id }
@@ -68,6 +72,7 @@ final class Library {
         let id = url.standardizedFileURL.path
         if let existing = collections.first(where: { $0.id == id }) {
             focusedID = existing.id
+            onOpened(url)
             return existing
         }
         let collection = Collection(rootURL: url)
@@ -75,6 +80,7 @@ final class Library {
         focusedID = collection.id
         await collection.activate(onExternalChange: { [weak self] in self?.onExternalChange() })
         persist()
+        onOpened(url)
         return collection
     }
 
@@ -89,6 +95,20 @@ final class Library {
         collections.removeAll { $0.id == collection.id }
         if focusedID == collection.id { focusedID = collections.first?.id }
         persist()
+    }
+
+    /// Close every open collection (used when switching to a saved library).
+    func closeAll() {
+        for collection in collections { collection.deactivate() }
+        collections.removeAll()
+        focusedID = nil
+        persist()
+    }
+
+    /// Switch to a saved library: close what's open, then open its collections.
+    func openLibrary(_ urls: [URL]) async {
+        closeAll()
+        await open(urls: urls)
     }
 
     #if os(macOS)
@@ -124,30 +144,13 @@ final class Library {
         }
 
         for data in datas {
-            var isStale = false
-            guard let url = try? URL(
-                resolvingBookmarkData: data, options: bookmarkResolutionOptions,
-                relativeTo: nil, bookmarkDataIsStale: &isStale
-            ) else { continue }
+            guard let url = Bookmark.resolve(data) else { continue }
             await open(url: url)
         }
     }
 
     private func persist() {
-        let datas: [Data] = collections.compactMap { collection in
-            try? collection.rootURL.bookmarkData(
-                options: bookmarkCreationOptions, includingResourceValuesForKeys: nil, relativeTo: nil)
-        }
+        let datas: [Data] = collections.compactMap { Bookmark.data(for: $0.rootURL) }
         UserDefaults.standard.set(datas, forKey: Self.bookmarksKey)
     }
-
-    #if os(macOS)
-    // Security-scoped bookmarks so sandboxed access to user-picked folders —
-    // including iCloud Drive / Obsidian vaults — survives relaunches.
-    private var bookmarkCreationOptions: URL.BookmarkCreationOptions { [.withSecurityScope] }
-    private var bookmarkResolutionOptions: URL.BookmarkResolutionOptions { [.withSecurityScope] }
-    #else
-    private var bookmarkCreationOptions: URL.BookmarkCreationOptions { [] }
-    private var bookmarkResolutionOptions: URL.BookmarkResolutionOptions { [] }
-    #endif
 }

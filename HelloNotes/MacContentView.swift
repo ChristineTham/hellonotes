@@ -26,6 +26,12 @@ struct MacContentView: View {
     @State private var showGitSettings = false
     @State private var showClone = false
 
+    /// The "open" launcher and its backing stores (recents + saved libraries).
+    @State private var recents = RecentsStore()
+    @State private var libraries = LibrariesStore()
+    @State private var showLauncher = false
+    @State private var showNewRepo = false
+
     /// Multi-provider LLM assistant. Settings live at the app level so every
     /// window shares them.
     @Environment(LLMSettings.self) private var llmSettings
@@ -181,8 +187,11 @@ struct MacContentView: View {
                 Task { await tabs.reconcileAll() }
                 revalidateSelection()
             }
+            library.onOpened = { recents.record($0) }
             if library.isEmpty {
                 await library.restore()
+                // First run with nothing to restore: offer the launcher.
+                if library.isEmpty { showLauncher = true }
             }
             syncFocusedServices()
         }
@@ -255,6 +264,28 @@ struct MacContentView: View {
                 Task { await library.open(url: url) }
             }
         }
+        .sheet(isPresented: $showLauncher) {
+            LauncherView(
+                recents: recents,
+                libraries: libraries,
+                openCollectionURLs: library.collections.map(\.rootURL),
+                onOpenURL: { url in Task { await library.open(url: url) } },
+                onOpenLibrary: { lib in
+                    let urls = libraries.urls(for: lib)
+                    Task { await library.openLibrary(urls) }
+                },
+                onSaveLibrary: { name in libraries.save(name: name, urls: library.collections.map(\.rootURL)) },
+                onOpenCollection: { library.requestOpenCollections() },
+                onOpenObsidian: { openObsidianVault() },
+                onClone: { showClone = true },
+                onNewRepository: { showNewRepo = true }
+            )
+        }
+        .sheet(isPresented: $showNewRepo) {
+            NewRepositoryView(store: gitAccounts) { url in
+                Task { await library.open(url: url) }
+            }
+        }
         .sheet(isPresented: $showAssistant) {
             if let assistant {
                 AssistantView(model: assistant) {
@@ -324,26 +355,15 @@ struct MacContentView: View {
     private var sidebar: some View {
         VStack(alignment: .leading, spacing: 12) {
             Button {
-                library.requestOpenCollections()
+                showLauncher = true
             } label: {
-                Label("Open Collection", systemImage: "folder.badge.plus")
+                Label("Open…", systemImage: "books.vertical")
+                    .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-
-            Button {
-                openObsidianVault()
-            } label: {
-                Label("Open Obsidian Vault…", systemImage: "shippingbox")
-            }
-            .help("Find and open Obsidian vaults in iCloud Drive")
-
-            Button {
-                showClone = true
-            } label: {
-                Label("Clone Repository", systemImage: "arrow.down.circle")
-            }
-            .help("Browse and clone a repository from a connected account")
+            .keyboardShortcut("o", modifiers: [.command, .shift])
+            .help("Recents, Obsidian vaults, libraries, clone, or a new repository")
 
             if let focused {
                 Text(focused.name)
@@ -694,11 +714,14 @@ struct MacContentView: View {
         }
         .overlay {
             if library.isEmpty {
-                ContentUnavailableView(
-                    "No Collections",
-                    systemImage: "folder",
-                    description: Text("Open a folder of Markdown files to start a collection.")
-                )
+                ContentUnavailableView {
+                    Label("No Collections", systemImage: "folder")
+                } description: {
+                    Text("Open a collection, an Obsidian vault, or a saved library to begin.")
+                } actions: {
+                    Button("Open…") { showLauncher = true }
+                        .buttonStyle(.borderedProminent)
+                }
             } else if isSearching && searchGroups.isEmpty {
                 ContentUnavailableView.search(text: searchText)
             }
