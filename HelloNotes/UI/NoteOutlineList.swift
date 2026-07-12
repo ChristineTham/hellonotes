@@ -76,6 +76,14 @@ struct NoteOutlineList: NSViewRepresentable {
     /// "New Note" on a collection row (in its root) or a folder row (inside it).
     /// The second argument is the folder outline-item id, `nil` for the root.
     var onNewNote: (Collection?, String?) -> Void = { _, _ in }
+    /// "New Folder" on a collection row (root) or folder row (nested). Same
+    /// argument convention as `onNewNote`.
+    var onNewFolder: (Collection?, String?) -> Void = { _, _ in }
+    /// Move a folder (by outline-item id, an absolute path) to the Trash.
+    var onDeleteFolder: (String) -> Void = { _ in }
+    /// A note/attachment was dropped on a folder or collection row: move the
+    /// item at the first URL into the folder at the second.
+    var onMoveItem: (URL, URL) -> Void = { _, _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -102,6 +110,11 @@ struct NoteOutlineList: NSViewRepresentable {
         let menu = NSMenu()
         menu.delegate = context.coordinator
         outline.menu = menu
+
+        // Drag & drop: notes/attachments can be dragged onto folder or
+        // collection rows to move them (within their own collection).
+        outline.registerForDraggedTypes([.fileURL])
+        outline.setDraggingSourceOperationMask(.move, forLocal: true)
 
         context.coordinator.outlineView = outline
         context.coordinator.reload(roots: roots, signature: signature)
@@ -214,6 +227,61 @@ struct NoteOutlineList: NSViewRepresentable {
         }
         func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
             (item as? NoteOutlineItem)?.isExpandable ?? false
+        }
+
+        // MARK: Drag & drop (move notes/attachments between folders)
+
+        func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> NSPasteboardWriting? {
+            // Only leaves (notes / attachment files) are draggable.
+            guard let node = item as? NoteOutlineItem, let url = node.url else { return nil }
+            return url as NSURL
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, validateDrop info: NSDraggingInfo,
+                         proposedItem item: Any?, proposedChildIndex index: Int) -> NSDragOperation {
+            guard let source = draggedURL(from: info),
+                  let target = dropTarget(for: item) else { return [] }
+            // Same collection only, and never a no-op (already in that folder).
+            guard target.folderURL.standardizedFileURL.path.hasPrefix(target.collectionID),
+                  source.standardizedFileURL.path.hasPrefix(target.collectionID),
+                  source.deletingLastPathComponent().standardizedFileURL != target.folderURL.standardizedFileURL
+            else { return [] }
+            // Retarget the drop onto the row itself (not between rows).
+            outlineView.setDropItem(item, dropChildIndex: NSOutlineViewDropOnItemIndex)
+            return .move
+        }
+
+        func outlineView(_ outlineView: NSOutlineView, acceptDrop info: NSDraggingInfo,
+                         item: Any?, childIndex index: Int) -> Bool {
+            guard let source = draggedURL(from: info),
+                  let target = dropTarget(for: item) else { return false }
+            parent.onMoveItem(source, target.folderURL)
+            return true
+        }
+
+        private func draggedURL(from info: NSDraggingInfo) -> URL? {
+            let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self]) as? [URL]
+            return urls?.first
+        }
+
+        /// The folder a drop on `item` means: a folder row is itself the target
+        /// (its id is the folder's absolute path); a collection row is its root.
+        private func dropTarget(for item: Any?) -> (folderURL: URL, collectionID: String)? {
+            guard let node = item as? NoteOutlineItem else { return nil }
+            if let collection = node.collection {
+                return (collection.rootURL, collection.id)
+            }
+            if case .folder = node.kind {
+                // Folder ids are "<collection.id><relative path>".
+                guard let root = rootID(containing: node) else { return nil }
+                return (URL(fileURLWithPath: node.id, isDirectory: true), root)
+            }
+            return nil
+        }
+
+        /// The collection id owning `node` (folder ids are prefixed with it).
+        private func rootID(containing node: NoteOutlineItem) -> String? {
+            roots.first { node.id.hasPrefix($0.id) }?.id
         }
 
         // MARK: Delegate — rows & cells
@@ -411,6 +479,7 @@ struct NoteOutlineList: NSViewRepresentable {
                 addItem(menu, "Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file.url]) }
             } else if let collection = node.collection {
                 addItem(menu, "New Note") { self.parent.onNewNote(collection, nil) }
+                addItem(menu, "New Folder") { self.parent.onNewFolder(collection, nil) }
                 menu.addItem(.separator())
                 addItem(menu, "Focus Collection") { self.parent.onFocusCollection(collection) }
                 addItem(menu, "Reveal in Finder") {
@@ -419,6 +488,13 @@ struct NoteOutlineList: NSViewRepresentable {
                 addItem(menu, "Close Collection") { self.parent.onCloseCollection(collection) }
             } else if case .folder = node.kind {
                 addItem(menu, "New Note Here") { self.parent.onNewNote(nil, node.id) }
+                addItem(menu, "New Folder Here") { self.parent.onNewFolder(nil, node.id) }
+                menu.addItem(.separator())
+                addItem(menu, "Reveal in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: node.id, isDirectory: true)])
+                }
+                menu.addItem(.separator())
+                addItem(menu, "Move to Trash") { self.parent.onDeleteFolder(node.id) }
             }
         }
 

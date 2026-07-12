@@ -65,6 +65,11 @@ struct MacContentView: View {
     @State private var renameTarget: Note?
     @State private var renameTitle = ""
 
+    /// New-folder prompt state (set via the note-list context menu).
+    @State private var newFolderCollection: Collection?
+    @State private var newFolderParent: URL?
+    @State private var newFolderName = ""
+
     /// How notes are ordered in the folder tree.
     @State private var sortOrder: SortOrder = .modified
 
@@ -128,7 +133,7 @@ struct MacContentView: View {
     /// The folder tree for `collection` and the current sort order.
     private func tree(for collection: Collection) -> [CollectionTreeNode] {
         CollectionTree.build(from: collection.notes, attachments: collection.attachments,
-                             rootURL: collection.rootURL, sort: sortOrder)
+                             folders: collection.folders, rootURL: collection.rootURL, sort: sortOrder)
     }
 
     // MARK: - Editor derived data (for the selection's collection)
@@ -311,7 +316,46 @@ struct MacContentView: View {
         } message: {
             Text("Wiki links to this note across the collection are updated too.")
         }
+        .alert("New Folder",
+               isPresented: Binding(get: { newFolderCollection != nil },
+                                    set: { if !$0 { newFolderCollection = nil } })) {
+            TextField("Name", text: $newFolderName, prompt: Text("New Folder"))
+            Button("Create") {
+                newFolderCollection?.createFolder(
+                    named: newFolderName.isEmpty ? "New Folder" : newFolderName,
+                    in: newFolderParent)
+                newFolderCollection = nil
+            }
+            Button("Cancel", role: .cancel) { newFolderCollection = nil }
+        }
         .focusedSceneValue(\.appActions, appActions)
+        .background {
+            // ⌘W → close the active editor tab, but only while several tabs
+            // are open. A window-level shortcut wins over the File > Close
+            // menu item; when this button isn't present, ⌘W falls through to
+            // Close and dismisses the window — the Safari/Xcode convention.
+            if tabs.openNotes.count > 1, let id = selectedNoteID, tabs.editor(withID: id) != nil {
+                Button("") { closeTab(id) }
+                    .keyboardShortcut("w", modifiers: .command)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    /// Move a note/attachment into `folder` (drag & drop). Flushes pending
+    /// edits first — the file is about to change paths — then reselects the
+    /// item at its new URL.
+    private func moveItem(at source: URL, into folder: URL) {
+        guard let c = library.collection(containing: source) else { return }
+        let wasSelected = selectedNoteID == source
+        Task {
+            await tabs.flushAll()
+            if let destination = c.moveItem(at: source, into: folder), wasSelected {
+                selectedNoteID = destination
+            }
+        }
     }
 
     // MARK: - Menu-bar actions (File / Note / View commands)
@@ -330,6 +374,8 @@ struct MacContentView: View {
             canAsk: !library.allNotes.isEmpty,
             askLibrary: { showLibraryChat = true },
             assistant: { openAssistant() },
+            canCloseTab: tabs.openNotes.count > 1 && tabs.editor(withID: selectedNoteID) != nil,
+            closeTab: { if let id = selectedNoteID { closeTab(id) } },
             note: selectedNote.map { note in
                 NoteMenuActions(
                     isBookmarked: library.collection(containing: note.fileURL)?.bookmarks.isBookmarked(note) ?? false,
@@ -769,7 +815,23 @@ struct MacContentView: View {
                 } else if let note = (collection ?? focused)?.createNote() {
                     selectedNoteID = note.id
                 }
-            }
+            },
+            onNewFolder: { collection, folderID in
+                if let folderID, let c = library.collections.first(where: { folderID.hasPrefix($0.id) }) {
+                    newFolderParent = URL(fileURLWithPath: folderID, isDirectory: true)
+                    newFolderCollection = c
+                } else if let c = collection ?? focused {
+                    newFolderParent = nil
+                    newFolderCollection = c
+                }
+                newFolderName = ""
+            },
+            onDeleteFolder: { folderID in
+                if let c = library.collections.first(where: { folderID.hasPrefix($0.id) }) {
+                    c.deleteFolder(at: URL(fileURLWithPath: folderID, isDirectory: true))
+                }
+            },
+            onMoveItem: { source, folder in moveItem(at: source, into: folder) }
         )
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search all collections")
         .navigationTitle(selectedTag.map { "#\($0)" } ?? "Notes")

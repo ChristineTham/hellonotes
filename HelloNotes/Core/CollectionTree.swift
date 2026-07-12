@@ -33,7 +33,7 @@ struct CollectionTreeNode: Identifiable, Hashable {
 nonisolated enum CollectionTree {
 
     static func build(from notes: [Note], attachments: [CollectionFile] = [],
-                      rootURL: URL, sort: SortOrder) -> [CollectionTreeNode] {
+                      folders: [URL] = [], rootURL: URL, sort: SortOrder) -> [CollectionTreeNode] {
         let root = Folder()
         let rootDepth = rootURL.standardizedFileURL.pathComponents.count
 
@@ -45,6 +45,17 @@ nonisolated enum CollectionTree {
                 folder = folder.child(named: String(dir))
             }
             return folder
+        }
+
+        // Materialise every directory first, so folders with no files (yet —
+        // freshly created, or emptied by a move) still get a node.
+        for dirURL in folders {
+            let components = dirURL.standardizedFileURL.pathComponents
+            guard components.count > rootDepth else { continue }
+            var folder = root
+            for dir in components[rootDepth...] {
+                folder = folder.child(named: String(dir))
+            }
         }
 
         for note in notes { folder(for: note.fileURL)?.notes.append(note) }

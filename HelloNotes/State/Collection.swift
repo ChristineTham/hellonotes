@@ -36,6 +36,10 @@ final class Collection: Identifiable {
     /// Non-Markdown files (PDFs, images, CSVs, …), browsable alongside notes.
     var attachments: [CollectionFile] = []
 
+    /// Every directory inside the collection, so empty folders (e.g. one just
+    /// created, or one whose last note moved out) still appear in the tree.
+    var folders: [URL] = []
+
     // MARK: Per-collection subsystems (isolated to this collection)
 
     /// The collection's `[[wiki-link]]` / backlink index.
@@ -80,7 +84,7 @@ final class Collection: Identifiable {
     /// Scans `rootURL` for Markdown files and other attachments.
     func scan() {
         let fileManager = FileManager.default
-        let resourceKeys: [URLResourceKey] = [.contentModificationDateKey, .contentTypeKey, .isRegularFileKey]
+        let resourceKeys: [URLResourceKey] = [.contentModificationDateKey, .contentTypeKey, .isRegularFileKey, .isDirectoryKey]
 
         guard let enumerator = fileManager.enumerator(
             at: rootURL,
@@ -89,17 +93,23 @@ final class Collection: Identifiable {
         ) else {
             notes = []
             attachments = []
+            folders = []
             return
         }
 
         var discovered: [Note] = []
         var discoveredFiles: [CollectionFile] = []
+        var discoveredFolders: [URL] = []
 
         for case let fileURL as URL in enumerator {
-            guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(resourceKeys)),
-                  resourceValues.isRegularFile == true else {
+            guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(resourceKeys)) else {
                 continue
             }
+            if resourceValues.isDirectory == true {
+                discoveredFolders.append(fileURL)
+                continue
+            }
+            guard resourceValues.isRegularFile == true else { continue }
             let modified = resourceValues.contentModificationDate ?? .distantPast
 
             let isMarkdown = resourceValues.contentType?.conforms(to: Self.markdownType) == true
@@ -118,6 +128,7 @@ final class Collection: Identifiable {
 
         notes = discovered.sorted { $0.lastModified > $1.lastModified }
         attachments = discoveredFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        folders = discoveredFolders
     }
 
     // MARK: - Lifecycle
@@ -308,5 +319,54 @@ final class Collection: Identifiable {
         try? FileManager.default.trashItem(at: note.fileURL, resultingItemURL: nil)
         scan()
         refreshDerived()
+    }
+
+    /// Create an empty folder inside `parent` (defaults to the root), with the
+    /// name disambiguated if it already exists. Returns the new folder's URL.
+    @discardableResult
+    func createFolder(named name: String = "New Folder", in parent: URL? = nil) -> URL? {
+        let base = name
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+        guard !base.isEmpty else { return nil }
+        let container = parent ?? rootURL
+        var candidate = container.appendingPathComponent(base, isDirectory: true)
+        var counter = 2
+        while FileManager.default.fileExists(atPath: candidate.path) {
+            candidate = container.appendingPathComponent("\(base) \(counter)", isDirectory: true)
+            counter += 1
+        }
+        do {
+            try FileManager.default.createDirectory(at: candidate, withIntermediateDirectories: false)
+        } catch {
+            return nil
+        }
+        scan()
+        refreshDerived()
+        return candidate
+    }
+
+    /// Move a folder (and its contents) to the Trash and re-index.
+    func deleteFolder(at url: URL) {
+        try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+        scan()
+        refreshDerived()
+    }
+
+    /// Move a note or attachment file into `folder` (which must be inside the
+    /// collection). Returns the item's new URL, or `nil` when the move fails or
+    /// a same-named item already exists there.
+    func moveItem(at itemURL: URL, into folder: URL) -> URL? {
+        let destination = folder.appendingPathComponent(itemURL.lastPathComponent)
+        guard destination.standardizedFileURL != itemURL.standardizedFileURL,
+              !FileManager.default.fileExists(atPath: destination.path) else { return nil }
+        do {
+            try FileManager.default.moveItem(at: itemURL, to: destination)
+        } catch {
+            return nil
+        }
+        scan()
+        refreshDerived()
+        return destination
     }
 }

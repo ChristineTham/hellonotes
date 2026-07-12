@@ -186,10 +186,11 @@ struct iOSContentView: View {
         }
     }
 
-    /// A collection row: tap to focus it; swipe to close.
+    /// A collection row: tap to focus it (and show its notes); swipe to close.
     private func collectionRow(_ collection: Collection) -> some View {
         Button {
             library.focus(collection)
+            preferredCompactColumn = .content   // on iPhone, push to the note list
         } label: {
             HStack {
                 Label(collection.name, systemImage: "books.vertical")
@@ -214,7 +215,10 @@ struct iOSContentView: View {
     }
 
     private func filterRow(title: String, systemImage: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            action()
+            preferredCompactColumn = .content   // on iPhone, push to the note list
+        } label: {
             HStack {
                 Label(title, systemImage: systemImage)
                 Spacer()

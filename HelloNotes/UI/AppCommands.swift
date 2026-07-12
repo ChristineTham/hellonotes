@@ -26,6 +26,10 @@ struct AppActions {
     var canAsk: Bool
     var askLibrary: () -> Void
     var assistant: () -> Void
+    /// Close the active editor tab. Enabled only when more than one tab is
+    /// open, so ⌘W falls through to the standard window Close otherwise.
+    var canCloseTab: Bool
+    var closeTab: () -> Void
     /// Actions on the selected note; `nil` when no note is selected.
     var note: NoteMenuActions?
 }
@@ -74,6 +78,17 @@ struct HelloNotesCommands: Commands {
             Button("Open Quickly…") { actions?.openQuickly() }
                 .keyboardShortcut("o")
                 .disabled(!(actions?.canOpenQuickly ?? false))
+
+            Divider()
+
+            // Deliberately no ⌘W here: SwiftUI won't reliably attach a key
+            // equivalent that the standard Close item already owns. The main
+            // window intercepts ⌘W itself while several tabs are open (view
+            // shortcuts beat menu items), so ⌘W closes the tab then and the
+            // window otherwise — the Safari/Xcode convention. This item is the
+            // discoverable, clickable counterpart.
+            Button("Close Tab") { actions?.closeTab() }
+                .disabled(!(actions?.canCloseTab ?? false))
         }
 
         // MARK: File — export lives where macOS users expect it.
