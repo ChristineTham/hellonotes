@@ -39,22 +39,24 @@ final class AppearanceSettings {
     // MARK: Accent colour
 
     enum Accent: String, CaseIterable, Identifiable {
-        case multicolor, blue, purple, pink, red, orange, yellow, green, graphite, custom
+        case lavender, multicolor, blue, purple, pink, red, orange, yellow, green, graphite, custom
         var id: String { rawValue }
 
         var label: String {
             switch self {
             case .multicolor: return "Multicolor"
             case .custom: return "Custom"
+            case .lavender: return "Lavender"
             default: return rawValue.capitalized
             }
         }
 
-        /// The colour to tint with; `nil` for "multicolor" (follow the system
-        /// accent) and for "custom" (the caller supplies the custom colour).
+        /// The base colour to tint with; `nil` for "multicolor" (follow the
+        /// system accent) and for "custom" (the caller supplies it).
         var color: Color? {
             switch self {
             case .multicolor, .custom: return nil
+            case .lavender: return AppearanceSettings.brandLavender
             case .blue: return .blue
             case .purple: return .purple
             case .pink: return .pink
@@ -71,6 +73,9 @@ final class AppearanceSettings {
         var swatch: Color { color ?? .accentColor }
     }
 
+    /// The app's signature lavender/mauve accent (the default).
+    static let brandLavender = Color(.sRGB, red: 0.584, green: 0.459, blue: 0.804)
+
     // MARK: Stored settings
 
     var mode: Mode { didSet { UserDefaults.standard.set(mode.rawValue, forKey: "appearanceMode") } }
@@ -85,8 +90,8 @@ final class AppearanceSettings {
     init() {
         let defaults = UserDefaults.standard
         mode = Mode(rawValue: defaults.string(forKey: "appearanceMode") ?? "") ?? .system
-        accent = Accent(rawValue: defaults.string(forKey: "accentChoice") ?? "") ?? .multicolor
-        customAccent = Self.color(fromHex: defaults.string(forKey: "customAccentHex")) ?? .blue
+        accent = Accent(rawValue: defaults.string(forKey: "accentChoice") ?? "") ?? .lavender
+        customAccent = Self.color(fromHex: defaults.string(forKey: "customAccentHex")) ?? Self.brandLavender
         let stored = defaults.double(forKey: "textScale")
         textScale = stored == 0 ? 1.0 : min(max(stored, Self.minScale), Self.maxScale)
     }
@@ -101,13 +106,53 @@ final class AppearanceSettings {
         }
     }
 
-    /// The tint colour to apply (`nil` = follow the system accent).
+    /// The base accent colour the user chose, or `nil` for "multicolor"
+    /// (follow the system accent).
+    var baseAccent: Color? {
+        switch accent {
+        case .multicolor: return nil
+        case .custom: return customAccent
+        default: return accent.color
+        }
+    }
+
+    /// The tint to apply app-wide. It *adapts to context*: the chosen accent is
+    /// lightened on dark backgrounds and slightly deepened on light ones, so it
+    /// stays vivid and legible in either appearance. `nil` follows the system.
     var accentColor: Color? {
-        accent == .custom ? customAccent : accent.color
+        guard let base = baseAccent else { return nil }
+        #if os(macOS)
+        return Color(nsColor: Self.adaptiveNSColor(base))
+        #else
+        return base
+        #endif
     }
 
     /// The current tint as a concrete colour, for previews/swatches.
     var resolvedAccent: Color { accentColor ?? .accentColor }
+
+    #if os(macOS)
+    /// The accent as a concrete (appearance-adaptive) NSColor for the editor —
+    /// falls back to the system accent for "multicolor".
+    var editorAccentNSColor: NSColor {
+        if let base = baseAccent { return Self.adaptiveNSColor(base) }
+        return .controlAccentColor
+    }
+
+    /// A dynamic NSColor that lightens `base` on dark backgrounds and deepens it
+    /// slightly on light ones — the "adjusts depending on context" behaviour.
+    static func adaptiveNSColor(_ base: Color) -> NSColor {
+        let solid = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+        return NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            if isDark {
+                return solid.blended(withFraction: 0.24, of: .white) ?? solid
+            } else {
+                return solid.blended(withFraction: 0.08, of: .black) ?? solid
+            }
+        }
+    }
+    #endif
 
     /// Base editor font size (points) scaled by the text setting.
     var editorFontSize: CGFloat { 16 * textScale }

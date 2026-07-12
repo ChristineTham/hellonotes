@@ -714,6 +714,14 @@ struct NoteEditorView: View {
     /// `[[wiki-links]]` to existing notes are clickable.
     private var configuration: MarkdownEditorConfiguration {
         var config = MarkdownEditorConfiguration.default
+        // Tint the editor with the app accent (context-adaptive): links and
+        // `==highlight==` follow the chosen accent colour.
+        var theme = MarkdownEditorTheme.default
+        let accent = appearance.editorAccentNSColor
+        theme.link = accent
+        theme.incompleteLink = accent
+        theme.highlightColor = accent.withAlphaComponent(0.30)
+        config.theme = theme
         config.services.syntaxHighlighter = Self.syntaxHighlighter
         config.services.latex = Self.latexRenderer
         config.services.diagrams = Self.diagramRenderer

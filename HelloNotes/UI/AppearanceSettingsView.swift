@@ -14,7 +14,7 @@ struct AppearanceSettingsView: View {
     @Bindable var settings: AppearanceSettings
 
     private let swatchAccents: [AppearanceSettings.Accent] =
-        [.multicolor, .blue, .purple, .pink, .red, .orange, .yellow, .green, .graphite]
+        [.multicolor, .lavender, .blue, .purple, .pink, .red, .orange, .yellow, .green, .graphite]
 
     var body: some View {
         Form {
