@@ -57,6 +57,7 @@ struct NoteEditorView: View {
     @Environment(\.openWindow) private var openWindow
 
     @State private var showMermaid = false
+    @State private var showSlides = false
     @State private var showOutline = false
     @State private var showHistory = false
     @State private var showIntelligence = false
@@ -301,6 +302,13 @@ struct NoteEditorView: View {
                 }
                 .sheet(isPresented: $showMermaid) {
                     MermaidPreviewView(sources: mermaidSources)
+                }
+                .sheet(isPresented: $showSlides) {
+                    SlidesView(
+                        markdown: editor.text,
+                        title: editor.note?.title ?? "Slides",
+                        baseURL: editor.note?.fileURL.deletingLastPathComponent()
+                    )
                 }
                 .sheet(isPresented: $showIntelligence) {
                     IntelligenceView(
@@ -593,6 +601,9 @@ struct NoteEditorView: View {
                     OutlineView(text: editor.text, onSelectHeading: jumpToHeading)
                 }
             barButton("Mind map of this note's links", "brain") { onShowMindMap() }
+            if MarpSlides.isMarp(editor.text) {
+                barButton("Present as slides (Marp)", "rectangle.on.rectangle") { showSlides = true }
+            }
             if !mermaidSources.isEmpty {
                 barButton("Preview Mermaid diagrams", "chart.xyaxis.line") { showMermaid = true }
             }

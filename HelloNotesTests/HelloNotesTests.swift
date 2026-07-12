@@ -26,7 +26,7 @@ struct HelloNotesTests {
     /// The sample vault's note titles (Markdown files, recursively — including the
     /// notes in `Projects/` and `Templates/`, and its `README`).
     private static let sampleNoteTitles: Set<String> = [
-        "2026-07-11", "Callouts", "Diagram", "Ideas", "MathNote", "README",
+        "2026-07-11", "Callouts", "Deck", "Diagram", "Ideas", "MathNote", "README",
         "RichTransclude", "Transclude", "Welcome", "Roadmap", "Daily", "SKILL",
     ]
 
