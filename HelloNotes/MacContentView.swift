@@ -99,7 +99,13 @@ struct MacContentView: View {
     /// The folder tree for the current vault and sort order.
     private var tree: [VaultTreeNode] {
         guard let vault = indexer.selectedVaultURL else { return [] }
-        return VaultTree.build(from: indexer.notes, vaultURL: vault, sort: sortOrder)
+        return VaultTree.build(from: indexer.notes, attachments: indexer.attachments,
+                               vaultURL: vault, sort: sortOrder)
+    }
+
+    /// The attachment file the current selection points at, if any.
+    private var selectedAttachment: VaultFile? {
+        indexer.attachments.first { $0.url == selectedNoteID }
     }
 
     /// Distinct hashtags across the vault.
@@ -210,7 +216,12 @@ struct MacContentView: View {
             // and drop tabs for notes that no longer exist.
             refreshDerived(with: notes)
             tabs.prune(keeping: Set(notes.map(\.id)))
-            if selectedNoteID.map({ id in !notes.contains { $0.id == id } }) == true {
+            // Keep the selection if it's a note that still exists or a viewable
+            // attachment; otherwise fall back to the last open tab.
+            let stillValid = selectedNoteID.map { id in
+                notes.contains { $0.id == id } || indexer.attachments.contains { $0.url == id }
+            } ?? true
+            if !stillValid {
                 selectedNoteID = tabs.openNotes.last?.id
             }
             Task { await git.refreshStatus() }
@@ -499,7 +510,9 @@ struct MacContentView: View {
                 Divider()
             }
 
-            if let activeEditor {
+            if let attachment = selectedAttachment {
+                FileViewerView(file: attachment)
+            } else if let activeEditor {
                 NoteEditorView(
                     editor: activeEditor,
                     backlinks: backlinks,

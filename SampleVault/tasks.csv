@@ -1,0 +1,6 @@
+Task,Owner,Status,Priority,Due
+"Draft the roadmap",Ada,In progress,High,2026-07-20
+"Review PR #42",Grace,Todo,Medium,2026-07-15
+"Ship v1.0","Alan, Katherine",Blocked,High,2026-08-01
+"Write release notes",Ada,Todo,Low,2026-07-28
+"Fix login, then deploy",Grace,Done,High,2026-07-10

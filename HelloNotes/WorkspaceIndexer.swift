@@ -22,6 +22,10 @@ final class WorkspaceIndexer {
     /// The Markdown notes discovered inside the vault.
     var notes: [Note] = []
 
+    /// Non-Markdown files in the vault (PDFs, images, CSVs, …), browsable
+    /// alongside notes and opened in a viewer.
+    var attachments: [VaultFile] = []
+
     /// The Uniform Type Identifier used to recognise Markdown files. `UTType`
     /// has no built-in `.markdown` constant, so we resolve the system-declared
     /// Markdown type (`net.daringfireball.markdown`), falling back to the `md`
@@ -47,32 +51,37 @@ final class WorkspaceIndexer {
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
             notes = []
+            attachments = []
             return
         }
 
         var discovered: [Note] = []
+        var discoveredFiles: [VaultFile] = []
 
         for case let fileURL as URL in enumerator {
             guard let resourceValues = try? fileURL.resourceValues(forKeys: Set(resourceKeys)),
                   resourceValues.isRegularFile == true else {
                 continue
             }
+            let modified = resourceValues.contentModificationDate ?? .distantPast
 
             // Match Markdown files either by declared content type or by extension.
             let isMarkdown = resourceValues.contentType?.conforms(to: Self.markdownType) == true
                 || UTType(filenameExtension: fileURL.pathExtension)?.conforms(to: Self.markdownType) == true
 
-            guard isMarkdown else { continue }
-
-            let note = Note(
-                title: fileURL.deletingPathExtension().lastPathComponent,
-                fileURL: fileURL,
-                lastModified: resourceValues.contentModificationDate ?? .distantPast
-            )
-            discovered.append(note)
+            if isMarkdown {
+                discovered.append(Note(
+                    title: fileURL.deletingPathExtension().lastPathComponent,
+                    fileURL: fileURL,
+                    lastModified: modified
+                ))
+            } else {
+                discoveredFiles.append(VaultFile(url: fileURL, lastModified: modified))
+            }
         }
 
         notes = discovered.sorted { $0.lastModified > $1.lastModified }
+        attachments = discoveredFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
     /// Presents an `NSOpenPanel` so the user can choose a vault folder, then scans it.
