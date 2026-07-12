@@ -11,20 +11,19 @@ import AppKit
 /// Saves images pasted into the editor as files in the vault, so notes stay
 /// plain text that references real image files (never embedded blobs).
 enum ImagePaste {
-    /// Save an image from `pasteboard` into an `assets/` folder beside
-    /// `noteURL`, returning a Markdown image link relative to the note.
-    /// Returns `nil` when the pasteboard holds no image.
+    /// Save an image from `pasteboard` into the same folder as `noteURL`,
+    /// returning a Markdown image link relative to the note. Returns `nil` when
+    /// the pasteboard holds no image.
     static func saveImage(from pasteboard: NSPasteboard, nextTo noteURL: URL, timestamp: Date) -> String? {
         guard let pngData = pngData(from: pasteboard) else { return nil }
 
-        let assetsDir = noteURL.deletingLastPathComponent().appendingPathComponent("assets", isDirectory: true)
-        try? FileManager.default.createDirectory(at: assetsDir, withIntermediateDirectories: true)
+        let folder = noteURL.deletingLastPathComponent()
 
         let stamp = Int(timestamp.timeIntervalSince1970)
-        var candidate = assetsDir.appendingPathComponent("Pasted-\(stamp).png")
+        var candidate = folder.appendingPathComponent("Pasted-\(stamp).png")
         var counter = 2
         while FileManager.default.fileExists(atPath: candidate.path) {
-            candidate = assetsDir.appendingPathComponent("Pasted-\(stamp)-\(counter).png")
+            candidate = folder.appendingPathComponent("Pasted-\(stamp)-\(counter).png")
             counter += 1
         }
 
@@ -33,7 +32,7 @@ enum ImagePaste {
         } catch {
             return nil
         }
-        return "![](assets/\(candidate.lastPathComponent))"
+        return "![](\(candidate.lastPathComponent))"
     }
 
     /// Extract PNG data from the pasteboard, converting from TIFF (screenshots)

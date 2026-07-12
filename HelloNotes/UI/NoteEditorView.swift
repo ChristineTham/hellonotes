@@ -264,6 +264,7 @@ struct NoteEditorView: View {
                         configuration: configuration,
                         documentId: editor.note?.fileURL.path ?? "default",
                         onPasteImage: pasteImage,
+                        onSmartPaste: smartPaste,
                         onLinkClick: onOpenWikiLink,
                         onCaretRectChange: { caretRect = $0 },
                         onInlineSelectionChange: { inlineSelection = $0 }
@@ -337,12 +338,46 @@ struct NoteEditorView: View {
         }
     }
 
-    // MARK: - Image paste
+    // MARK: - Smart paste
 
     /// Persist a pasted image beside the note and return the Markdown to insert.
+    /// The alt text is filled in asynchronously from on-device vision.
     private func pasteImage(_ pasteboard: NSPasteboard) -> String? {
         guard let noteURL = editor.note?.fileURL else { return nil }
-        return ImagePaste.saveImage(from: pasteboard, nextTo: noteURL, timestamp: .now)
+        guard let markdown = ImagePaste.saveImage(from: pasteboard, nextTo: noteURL, timestamp: .now) else { return nil }
+
+        // markdown == "![](relative/path.png)" — resolve and describe it.
+        if let rel = markdown.range(of: "](").map({ String(markdown[$0.upperBound...].dropLast()) }) {
+            let assetURL = noteURL.deletingLastPathComponent().appendingPathComponent(rel)
+            let placeholder = markdown
+            Task { @MainActor in
+                if let alt = await VisionAlt.describe(assetURL) {
+                    replaceFirst(placeholder, with: "![\(alt)](\(rel))")
+                }
+            }
+        }
+        return markdown
+    }
+
+    /// Convert a URL to a Markdown link (title filled in asynchronously) or rich
+    /// text to Markdown. Returns `nil` to fall through to the default paste.
+    private func smartPaste(_ pasteboard: NSPasteboard) -> String? {
+        if let (markdown, url) = SmartPaste.urlLink(from: pasteboard) {
+            Task { @MainActor in
+                if let title = await SmartPaste.fetchTitle(url) {
+                    replaceFirst(markdown, with: "[\(title)](\(url.absoluteString))")
+                }
+            }
+            return markdown
+        }
+        return SmartPaste.markdownFromHTML(pasteboard)
+    }
+
+    /// Replace the first occurrence of `target` in the note body — used to
+    /// upgrade a just-pasted placeholder (image alt text, URL title).
+    private func replaceFirst(_ target: String, with replacement: String) {
+        guard target != replacement, let range = editor.text.range(of: target) else { return }
+        editor.text.replaceSubrange(range, with: replacement)
     }
 
     // MARK: - Intelligence apply handlers

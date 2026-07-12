@@ -623,11 +623,11 @@ struct HelloNotesTests {
             ImagePaste.saveImage(from: pasteboard, nextTo: noteURL, timestamp: Date(timeIntervalSince1970: 1_000_000))
         )
 
-        #expect(markdown.hasPrefix("![](assets/Pasted-"))
+        #expect(markdown.hasPrefix("![](Pasted-"))
         #expect(markdown.hasSuffix(".png)"))
-        // The referenced file exists next to the note.
-        let assetName = markdown.dropFirst("![](assets/".count).dropLast(")".count)
-        let assetURL = vault.appendingPathComponent("assets").appendingPathComponent(String(assetName))
+        // The referenced file exists in the same folder as the note.
+        let assetName = markdown.dropFirst("![](".count).dropLast(")".count)
+        let assetURL = noteURL.deletingLastPathComponent().appendingPathComponent(String(assetName))
         #expect(FileManager.default.fileExists(atPath: assetURL.path))
     }
 
