@@ -676,4 +676,37 @@ struct HelloNotesTests {
         let templates = try #require(tree.first { $0.name == "Templates" })
         #expect(templates.children?.compactMap { $0.note?.title } == ["Daily"])
     }
+
+    // MARK: - Obsidian vault discovery
+
+    @Test
+    func discoversObsidianVaultsUnderAFolder() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("ObsidianTest-\(UUID().uuidString)", isDirectory: true)
+        defer { try? fm.removeItem(at: root) }
+
+        // Two vaults (folders with a `.obsidian` dir) plus a plain folder.
+        func makeVault(_ name: String) throws -> URL {
+            let v = root.appendingPathComponent(name, isDirectory: true)
+            try fm.createDirectory(at: v.appendingPathComponent(".obsidian"), withIntermediateDirectories: true)
+            try Data("# Note".utf8).write(to: v.appendingPathComponent("Note.md"))
+            return v
+        }
+        let work = try makeVault("Work")
+        let personal = try makeVault("Personal")
+        try fm.createDirectory(at: root.appendingPathComponent("NotAVault"), withIntermediateDirectories: true)
+
+        // A single vault is recognised on its own.
+        #expect(ObsidianVault.isVault(work))
+        #expect(!ObsidianVault.isVault(root.appendingPathComponent("NotAVault")))
+
+        // Scanning the parent finds both vaults (sorted), and doesn't descend
+        // into a vault's own subfolders.
+        let found = ObsidianVault.discoverVaults(in: root)
+        #expect(found.map(\.lastPathComponent) == ["Personal", "Work"])
+        _ = personal
+
+        // Scanning a vault directly returns just that vault.
+        #expect(ObsidianVault.discoverVaults(in: work).map(\.lastPathComponent) == ["Work"])
+    }
 }

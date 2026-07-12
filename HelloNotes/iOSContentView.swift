@@ -34,6 +34,21 @@ struct iOSContentView: View {
 
     private var focused: Collection? { library.focused }
 
+    /// Open picked folders, expanding any that are (or contain) Obsidian vaults
+    /// — so choosing an iCloud Drive folder full of vaults opens each of them.
+    private func openPicked(_ urls: [URL]) async {
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            let vaults = ObsidianVault.discoverVaults(in: url)
+            if scoped { url.stopAccessingSecurityScopedResource() }
+            if vaults.isEmpty {
+                await library.open(url: url)
+            } else {
+                for vault in vaults { await library.open(url: vault) }
+            }
+        }
+    }
+
     /// Tags of the focused collection.
     private var tags: [String] { focused?.search.allTags() ?? [] }
 
@@ -59,7 +74,7 @@ struct iOSContentView: View {
         .navigationSplitViewStyle(.balanced)
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
             if case let .success(urls) = result {
-                Task { await library.open(urls: urls) }
+                Task { await openPicked(urls) }
             }
         }
         .task {
@@ -135,6 +150,11 @@ struct iOSContentView: View {
                         showImporter = true
                     } label: {
                         Label("Open Collection", systemImage: "folder.badge.plus")
+                    }
+                    Button {
+                        showImporter = true
+                    } label: {
+                        Label("Open Obsidian Vault…", systemImage: "shippingbox")
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle")

@@ -142,8 +142,10 @@ final class Library {
     }
 
     #if os(macOS)
-    private var bookmarkCreationOptions: URL.BookmarkCreationOptions { [] }
-    private var bookmarkResolutionOptions: URL.BookmarkResolutionOptions { [] }
+    // Security-scoped bookmarks so sandboxed access to user-picked folders —
+    // including iCloud Drive / Obsidian vaults — survives relaunches.
+    private var bookmarkCreationOptions: URL.BookmarkCreationOptions { [.withSecurityScope] }
+    private var bookmarkResolutionOptions: URL.BookmarkResolutionOptions { [.withSecurityScope] }
     #else
     private var bookmarkCreationOptions: URL.BookmarkCreationOptions { [] }
     private var bookmarkResolutionOptions: URL.BookmarkResolutionOptions { [] }

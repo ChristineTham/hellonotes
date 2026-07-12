@@ -293,6 +293,32 @@ struct MacContentView: View {
         DispatchQueue.main.async { showAssistant = true }
     }
 
+    /// Browse iCloud Drive for Obsidian vaults. The open panel (Powerbox) grants
+    /// access to the chosen folders; the panel opens in Obsidian's iCloud folder
+    /// so vaults are one click away. Each selected folder that is an Obsidian
+    /// vault (has a `.obsidian` config) — or contains vaults — opens as a
+    /// collection; a plain folder opens as-is. Multi-select opens several at once.
+    private func openObsidianVault() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Open"
+        panel.message = "Choose your Obsidian vault folder(s) in iCloud Drive."
+        panel.directoryURL = ObsidianVault.defaultBrowseDirectory
+
+        guard panel.runModal() == .OK else { return }
+
+        var toOpen: [URL] = []
+        for url in panel.urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            let found = ObsidianVault.discoverVaults(in: url)
+            if scoped { url.stopAccessingSecurityScopedResource() }
+            toOpen += found.isEmpty ? [url] : found   // fall back to the folder itself
+        }
+        Task { await library.open(urls: toOpen) }
+    }
+
     // MARK: - Column 1: Sidebar
 
     private var sidebar: some View {
@@ -304,6 +330,13 @@ struct MacContentView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+
+            Button {
+                openObsidianVault()
+            } label: {
+                Label("Open Obsidian Vault…", systemImage: "shippingbox")
+            }
+            .help("Find and open Obsidian vaults in iCloud Drive")
 
             Button {
                 showClone = true
