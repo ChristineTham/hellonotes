@@ -41,6 +41,12 @@ struct MacContentView: View {
     @State private var showGitSettings = false
     @State private var showClone = false
 
+    /// Multi-provider LLM assistant.
+    @State private var llmSettings = LLMSettings()
+    @State private var assistant: AssistantModel?
+    @State private var showAssistant = false
+    @State private var showLLMSettings = false
+
     /// Per-vault bookmarked notes.
     @State private var bookmarks = BookmarksStore()
 
@@ -240,6 +246,22 @@ struct MacContentView: View {
                 indexer.setVault(url)
             }
         }
+        .sheet(isPresented: $showAssistant) {
+            if let assistant {
+                AssistantView(model: assistant) {
+                    showAssistant = false
+                    Task { try? await Task.sleep(for: .milliseconds(250)); showLLMSettings = true }
+                }
+            }
+        }
+        .sheet(isPresented: $showLLMSettings) {
+            LLMSettingsView(settings: llmSettings)
+        }
+    }
+
+    private func openAssistant() {
+        if assistant == nil { assistant = AssistantModel(settings: llmSettings) }
+        showAssistant = true
     }
 
     // MARK: - Column 1: Sidebar
@@ -296,6 +318,13 @@ struct MacContentView: View {
                 }
                 .keyboardShortcut("j", modifiers: [.command, .shift])
                 .disabled(indexer.notes.isEmpty)
+
+                Button {
+                    openAssistant()
+                } label: {
+                    Label("Assistant", systemImage: "sparkles")
+                }
+                .keyboardShortcut("a", modifiers: [.command, .shift])
 
                 let bookmarked = bookmarks.bookmarkedNotes(from: indexer.notes)
                 if !bookmarked.isEmpty {
