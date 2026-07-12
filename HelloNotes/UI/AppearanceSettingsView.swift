@@ -27,6 +27,10 @@ struct AppearanceSettingsView: View {
                 .pickerStyle(.segmented)
                 Text("“Auto” follows the system light/dark setting.")
                     .font(.caption).foregroundStyle(.secondary)
+
+                Toggle("Increase contrast", isOn: $settings.increaseContrast)
+                Text("Deepens the accent and holds text to the stricter WCAG AAA (7:1) ratio.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
             Section("Accent Color") {
@@ -82,6 +86,8 @@ struct AppearanceSettingsView: View {
         }
         .buttonStyle(.plain)
         .help(accent.label)
+        .accessibilityLabel("\(accent.label) accent")
+        .accessibilityAddTraits(settings.accent == accent ? [.isButton, .isSelected] : .isButton)
     }
 
     private var customSwatch: some View {

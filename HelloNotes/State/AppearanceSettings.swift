@@ -83,6 +83,8 @@ final class AppearanceSettings {
     var customAccent: Color { didSet { UserDefaults.standard.set(Self.hex(customAccent), forKey: "customAccentHex") } }
     /// 0.8 … 1.5, with 1.0 the default (middle of the slider).
     var textScale: Double { didSet { UserDefaults.standard.set(textScale, forKey: "textScale") } }
+    /// Deepen the accent and raise the text-contrast target to WCAG AAA (7:1).
+    var increaseContrast: Bool { didSet { UserDefaults.standard.set(increaseContrast, forKey: "increaseContrast") } }
 
     static let minScale = 0.8
     static let maxScale = 1.5
@@ -94,7 +96,11 @@ final class AppearanceSettings {
         customAccent = Self.color(fromHex: defaults.string(forKey: "customAccentHex")) ?? Self.brandLavender
         let stored = defaults.double(forKey: "textScale")
         textScale = stored == 0 ? 1.0 : min(max(stored, Self.minScale), Self.maxScale)
+        increaseContrast = defaults.bool(forKey: "increaseContrast")
     }
+
+    /// Text-contrast target: AAA when "increase contrast" is on, else AA.
+    var contrastTarget: CGFloat { increaseContrast ? 7.0 : 4.5 }
 
     // MARK: Derived
 
@@ -120,11 +126,11 @@ final class AppearanceSettings {
     /// lightened on dark backgrounds and slightly deepened on light ones, so it
     /// stays vivid and legible in either appearance. `nil` follows the system.
     var accentColor: Color? {
-        guard let base = baseAccent else { return nil }
+        guard baseAccent != nil else { return nil }
         #if os(macOS)
-        return Color(nsColor: Self.adaptiveNSColor(base))
+        return Color(nsColor: adaptiveAccentNSColor)
         #else
-        return base
+        return baseAccent
         #endif
     }
 
@@ -132,35 +138,44 @@ final class AppearanceSettings {
     var resolvedAccent: Color { accentColor ?? .accentColor }
 
     #if os(macOS)
-    /// The accent as a concrete (appearance-adaptive) NSColor — falls back to the
-    /// system accent for "multicolor". Used for control fills / decorations.
-    var editorAccentNSColor: NSColor {
-        if let base = baseAccent { return Self.adaptiveNSColor(base) }
-        return .controlAccentColor
+    /// The chosen accent as an sRGB colour, deepened toward a richer mauve when
+    /// "increase contrast" is on (so fills and labels have more headroom).
+    private var solidBaseNSColor: NSColor? {
+        guard let base = baseAccent else { return nil }
+        let solid = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+        return increaseContrast ? (solid.blended(withFraction: 0.18, of: .black) ?? solid) : solid
     }
 
-    /// The accent when used as *text* (links, selected labels): the adaptive
-    /// accent, further adjusted until it clears the WCAG AA 4.5:1 ratio against
-    /// the window background, so accent-coloured text stays legible in both
-    /// appearances.
-    var accentTextNSColor: NSColor {
-        guard let base = baseAccent else { return .controlAccentColor }
-        let solid = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+    /// The appearance-adaptive accent NSColor for control fills / decorations.
+    var adaptiveAccentNSColor: NSColor {
+        guard let solid = solidBaseNSColor else { return .controlAccentColor }
         return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            Self.contextAdjusted(solid, isDark: Self.isDark(appearance))
+        }
+    }
+    /// Alias kept for the editor call site.
+    var editorAccentNSColor: NSColor { adaptiveAccentNSColor }
+
+    /// The accent when used as *text* (links, selected labels): adjusted until it
+    /// clears the current contrast target (AA 4.5 or, with increase-contrast on,
+    /// AAA 7:1) against the window background — legible in either appearance.
+    var accentTextNSColor: NSColor {
+        guard let solid = solidBaseNSColor else { return .controlAccentColor }
+        let target = contrastTarget
+        return NSColor(name: nil) { appearance in
+            let isDark = Self.isDark(appearance)
             let start = Self.contextAdjusted(solid, isDark: isDark)
             let bg: NSColor = isDark ? NSColor(white: 0.12, alpha: 1) : NSColor(white: 0.98, alpha: 1)
-            return Self.readable(start, on: bg, towardDark: !isDark)
+            return Self.readable(start, on: bg, towardDark: !isDark, target: target)
         }
     }
 
     /// The label colour to place *on top of* an accent fill (black or white,
     /// whichever contrasts better with the accent in the current appearance).
     var onAccentNSColor: NSColor {
-        let base = baseAccent.map { NSColor($0).usingColorSpace(.sRGB) ?? NSColor($0) }
+        let solid = solidBaseNSColor
         return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            let fill = base.map { Self.contextAdjusted($0, isDark: isDark) } ?? .controlAccentColor
+            let fill = solid.map { Self.contextAdjusted($0, isDark: Self.isDark(appearance)) } ?? .controlAccentColor
             return Self.contrast(.white, fill) >= Self.contrast(.black, fill) ? .white : .black
         }
     }
@@ -169,14 +184,8 @@ final class AppearanceSettings {
     var accentText: Color? { baseAccent == nil ? nil : Color(nsColor: accentTextNSColor) }
     var onAccent: Color { Color(nsColor: onAccentNSColor) }
 
-    /// A dynamic NSColor that lightens `base` on dark backgrounds and deepens it
-    /// slightly on light ones — the "adjusts depending on context" behaviour.
-    static func adaptiveNSColor(_ base: Color) -> NSColor {
-        let solid = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
-        return NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return contextAdjusted(solid, isDark: isDark)
-        }
+    private static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
     }
 
     private static func contextAdjusted(_ solid: NSColor, isDark: Bool) -> NSColor {

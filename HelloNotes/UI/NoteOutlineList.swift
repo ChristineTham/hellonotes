@@ -271,6 +271,8 @@ struct NoteOutlineList: NSViewRepresentable {
             close.target = self
             close.action = #selector(closeClicked(_:))
             close.contentTintColor = .tertiaryLabelColor
+            close.setAccessibilityLabel("Close “\(collection.name)”")
+            close.toolTip = "Close “\(collection.name)”"
 
             let stack = NSStackView(views: [icon, name])
             stack.spacing = 5

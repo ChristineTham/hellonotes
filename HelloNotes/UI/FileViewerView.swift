@@ -48,11 +48,11 @@ struct FileViewerView: View {
             Button {
                 NSWorkspace.shared.open(file.url)
             } label: { Image(systemName: "arrow.up.forward.app").frame(width: 22, height: 18) }
-                .buttonStyle(.borderless).help("Open in default app")
+                .buttonStyle(.borderless).help("Open in default app").accessibilityLabel("Open in default app")
             Button {
                 NSWorkspace.shared.activateFileViewerSelecting([file.url])
             } label: { Image(systemName: "folder").frame(width: 22, height: 18) }
-                .buttonStyle(.borderless).help("Reveal in Finder")
+                .buttonStyle(.borderless).help("Reveal in Finder").accessibilityLabel("Reveal in Finder")
         }
         .font(.callout)
         .padding(.horizontal, 10).padding(.vertical, 5)

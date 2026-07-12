@@ -159,6 +159,7 @@ struct iOSContentView: View {
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
+                .accessibilityLabel("More actions")
             }
         }
     }

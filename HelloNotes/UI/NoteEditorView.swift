@@ -693,6 +693,7 @@ struct NoteEditorView: View {
         }
         .buttonStyle(.borderless)
         .help(help)
+        .accessibilityLabel(help)
     }
 
     /// Word count of the note body (front matter excluded).

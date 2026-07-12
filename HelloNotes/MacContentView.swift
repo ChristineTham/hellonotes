@@ -477,6 +477,7 @@ struct MacContentView: View {
                 }
                 .buttonStyle(.borderless)
                 .help("Git identity & accounts")
+                .accessibilityLabel("Git identity & accounts")
             }
 
             if !git.status.isRepository {
@@ -634,6 +635,7 @@ struct MacContentView: View {
         }
         .buttonStyle(.borderless)
         .help(help)
+        .accessibilityLabel(help)
     }
 
     private func closeTab(_ id: Note.ID) {
