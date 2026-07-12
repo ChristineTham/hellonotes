@@ -645,39 +645,31 @@ struct MacContentView: View {
     // MARK: - Column 2: Note list (all collections)
 
     private var noteList: some View {
-        // Selection is drawn by the rows themselves (an accent-tinted background)
-        // rather than the system-blue List highlight, so it follows the app
-        // accent. Rows set `selectedNoteID` on tap.
-        List {
-            if isSearching {
-                ForEach(searchGroups) { group in
-                    Section(group.collection.name) {
-                        ForEach(group.rows) { flatRow($0, in: group.collection) }
-                    }
+        let roots = outlineRoots
+        return NoteOutlineList(
+            roots: roots,
+            signature: outlineSignature(roots),
+            selection: $selectedNoteID,
+            focusedCollectionID: library.focusedID,
+            accent: appearance.resolvedAccent,
+            isBookmarked: { note in
+                library.collection(containing: note.fileURL)?.bookmarks.isBookmarked(note) ?? false
+            },
+            onToggleBookmark: { note in
+                library.collection(containing: note.fileURL)?.bookmarks.toggle(note)
+            },
+            onDelete: { note in
+                if let c = library.collection(containing: note.fileURL) { delete(note, in: c) }
+            },
+            onOpenInNewWindow: { openWindow(value: NoteRef($0.fileURL)) },
+            onCloseCollection: { collection in
+                if selectedNote.map({ library.collection(containing: $0.fileURL)?.id == collection.id }) ?? false {
+                    selectedNoteID = nil
                 }
-            } else if selectedTag != nil, let focused {
-                ForEach(taggedRows) { flatRow($0, in: focused) }
-            } else {
-                ForEach(library.collections) { collection in
-                    Section {
-                        ForEach(tree(for: collection)) { node in
-                            CollectionTreeRow(
-                                node: node,
-                                selection: selectedNoteID,
-                                accent: appearance.resolvedAccent,
-                                onSelect: { selectedNoteID = $0 },
-                                onDelete: { delete($0, in: collection) },
-                                onOpenInNewWindow: { openWindow(value: NoteRef($0.fileURL)) },
-                                isBookmarked: collection.bookmarks.isBookmarked,
-                                onToggleBookmark: collection.bookmarks.toggle
-                            )
-                        }
-                    } header: {
-                        collectionHeader(collection)
-                    }
-                }
-            }
-        }
+                library.close(collection)
+            },
+            onFocusCollection: { library.focus($0) }
+        )
         .searchable(text: $searchText, placement: .sidebar, prompt: "Search all collections")
         .navigationTitle(selectedTag.map { "#\($0)" } ?? "Notes")
         .toolbar {
@@ -735,80 +727,51 @@ struct MacContentView: View {
         }
     }
 
-    /// A collection's section header: name, Git indicator, and a close button.
-    /// Tapping it focuses the collection.
-    private func collectionHeader(_ collection: Collection) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "books.vertical")
-            Text(collection.name)
-                .fontWeight(collection.id == focused?.id ? .semibold : .regular)
-            if collection.git.status.isRepository {
-                Circle()
-                    .fill(collection.git.status.isClean ? Color.secondary : Color.orange)
-                    .frame(width: 6, height: 6)
+    // MARK: - Outline items (NSOutlineView data)
+
+    /// The outline tree for the current mode: collections as group rows, with
+    /// their folder trees (or flat search / tag results) as children.
+    private var outlineRoots: [NoteOutlineItem] {
+        if isSearching {
+            return searchGroups.map { group in
+                NoteOutlineItem(id: group.collection.id, kind: .collection(group.collection),
+                                children: group.rows.map {
+                    NoteOutlineItem(id: $0.note.fileURL.path, kind: .note($0.note, snippet: $0.snippet))
+                })
             }
-            Spacer()
-            Button {
-                if selectedNote.map({ library.collection(containing: $0.fileURL)?.id == collection.id }) ?? false {
-                    selectedNoteID = nil
-                }
-                library.close(collection)
-            } label: {
-                Image(systemName: "xmark.circle")
+        } else if selectedTag != nil, let focused {
+            return [NoteOutlineItem(id: focused.id, kind: .collection(focused),
+                                    children: taggedRows.map {
+                NoteOutlineItem(id: $0.note.fileURL.path, kind: .note($0.note, snippet: nil))
+            })]
+        } else {
+            return library.collections.map { collection in
+                NoteOutlineItem(id: collection.id, kind: .collection(collection),
+                                children: outlineItems(from: tree(for: collection)))
             }
-            .buttonStyle(.borderless)
-            .help("Close “\(collection.name)”")
         }
-        .contentShape(.rect)
-        .onTapGesture { library.focus(collection) }
     }
 
-    /// A flat (non-tree) note row used for search results and tag filtering.
-    private func flatRow(_ row: NoteRow, in collection: Collection) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(row.note.title)
-                .font(.headline)
-            if let snippet = row.snippet {
-                Text(snippet)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+    private func outlineItems(from nodes: [CollectionTreeNode]) -> [NoteOutlineItem] {
+        nodes.map { node in
+            if let note = node.note {
+                return NoteOutlineItem(id: node.id, kind: .note(note, snippet: nil))
+            } else if let file = node.file {
+                return NoteOutlineItem(id: node.id, kind: .file(file))
             } else {
-                Text(row.note.lastModified, format: .dateTime.year().month().day().hour().minute())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(.rect)
-        .onTapGesture { selectedNoteID = row.note.id }
-        .accentSelectionRow(isSelected: selectedNoteID == row.note.id, accent: appearance.resolvedAccent)
-        .contextMenu {
-            bookmarkButton(row.note, in: collection)
-            Button {
-                openWindow(value: NoteRef(row.note.fileURL))
-            } label: {
-                Label("Open in New Window", systemImage: "macwindow.badge.plus")
-            }
-            Divider()
-            Button(role: .destructive) {
-                delete(row.note, in: collection)
-            } label: {
-                Label("Move to Trash", systemImage: "trash")
+                return NoteOutlineItem(id: node.id, kind: .folder(node.name),
+                                       children: outlineItems(from: node.children ?? []))
             }
         }
     }
 
-    /// Context-menu toggle for bookmarking a note.
-    @ViewBuilder
-    private func bookmarkButton(_ note: Note, in collection: Collection) -> some View {
-        let on = collection.bookmarks.isBookmarked(note)
-        Button {
-            collection.bookmarks.toggle(note)
-        } label: {
-            Label(on ? "Remove Bookmark" : "Add Bookmark",
-                  systemImage: on ? "bookmark.slash" : "bookmark")
+    /// A cheap structural fingerprint so the outline reloads only when its
+    /// contents (not just selection/accent) change.
+    private func outlineSignature(_ roots: [NoteOutlineItem]) -> String {
+        func walk(_ items: [NoteOutlineItem]) -> String {
+            items.map { $0.id + "[" + walk($0.children) + "]" }.joined(separator: ",")
         }
+        return "\(sortOrder.rawValue)|\(library.focusedID ?? "")|" + walk(roots)
     }
 
     // MARK: - Actions
