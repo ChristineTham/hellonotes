@@ -277,6 +277,9 @@ struct NoteEditorView: View {
                         Divider()
                         referencesPanel
                     }
+
+                    Divider()
+                    bottomBar
                 }
                 .navigationTitle(editor.note?.title ?? "")
                 .task(id: editor.note?.fileURL) {
@@ -293,93 +296,6 @@ struct NoteEditorView: View {
                         findCurrentIndex = 0
                     } else {
                         findCurrentIndex = min(findCurrentIndex, count - 1)
-                    }
-                }
-                .toolbar {
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            toggleFindBar()
-                        } label: {
-                            Label("Find & Replace", systemImage: "magnifyingglass")
-                        }
-                        .help("Find & replace (⌘F)")
-                        .keyboardShortcut("f", modifiers: .command)
-                        .disabled(editor.note == nil)
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            showProperties = true
-                        } label: {
-                            Label("Properties", systemImage: "list.bullet.rectangle")
-                        }
-                        .help("Edit front-matter properties")
-                        .disabled(editor.note == nil)
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            showOutline = true
-                        } label: {
-                            Label("Outline & Statistics", systemImage: "list.bullet.indent")
-                        }
-                        .help("Outline & statistics")
-                        .popover(isPresented: $showOutline, arrowEdge: .top) {
-                            OutlineView(text: editor.text, onSelectHeading: jumpToHeading)
-                        }
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Menu {
-                            Button("Export as HTML…") {
-                                if let note = editor.note {
-                                    EditorExport.exportHTML(markdown: editor.text, title: note.title)
-                                }
-                            }
-                            Button("Export as PDF…") {
-                                if let note = editor.note {
-                                    EditorExport.exportPDF(markdown: editor.text, title: note.title)
-                                }
-                            }
-                        } label: {
-                            Label("Export", systemImage: "square.and.arrow.up")
-                        }
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            showHistory = true
-                        } label: {
-                            Label("Version History", systemImage: "clock.arrow.circlepath")
-                        }
-                        .help("Version history (Git)")
-                        .disabled(!git.status.isRepository || editor.note == nil)
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            if let url = editor.note?.fileURL { openWindow(value: NoteRef(url)) }
-                        } label: {
-                            Label("Open in New Window", systemImage: "macwindow.badge.plus")
-                        }
-                        .help("Open this note in a new window")
-                        .disabled(editor.note == nil)
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            showMermaid = true
-                        } label: {
-                            Label("Diagrams", systemImage: "chart.xyaxis.line")
-                        }
-                        .help("Preview Mermaid diagrams")
-                        .disabled(mermaidSources.isEmpty)
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        Button {
-                            showIntelligence = true
-                        } label: {
-                            Label("Intelligence", systemImage: "sparkles")
-                        }
-                        .help("Summarize & suggest with on-device intelligence")
-                        .disabled(editor.note == nil)
-                    }
-                    ToolbarItem(placement: .automatic) {
-                        saveStatus
                     }
                 }
                 .sheet(isPresented: $showMermaid) {
@@ -644,6 +560,86 @@ struct NoteEditorView: View {
             Label("Saved", systemImage: "checkmark.circle")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - Bottom bar
+
+    /// Obsidian-style status/action bar pinned to the bottom of the editor, near
+    /// the caret. Status sits on the left; actions on the right. The action set
+    /// is context-dependent — buttons that don't apply to the current note are
+    /// hidden, not just disabled.
+    private var bottomBar: some View {
+        HStack(spacing: 8) {
+            // Status (left)
+            Text("\(wordCount) word\(wordCount == 1 ? "" : "s")")
+                .foregroundStyle(.secondary)
+            Divider().frame(height: 11)
+            saveStatus.labelStyle(.titleAndIcon)
+            if git.status.isRepository, !git.status.isClean {
+                Divider().frame(height: 11)
+                Label("\(git.status.changeCount) changed", systemImage: "pencil.and.list.clipboard")
+                    .foregroundStyle(.orange)
+            }
+
+            Spacer(minLength: 12)
+
+            // Actions (right) — dynamic per context
+            barButton("Find & replace (⌘F)", "magnifyingglass", action: toggleFindBar)
+                .keyboardShortcut("f", modifiers: .command)
+            barButton("Edit front-matter properties", "list.bullet.rectangle") { showProperties = true }
+            barButton("Outline & statistics", "list.bullet.indent") { showOutline = true }
+                .popover(isPresented: $showOutline, arrowEdge: .bottom) {
+                    OutlineView(text: editor.text, onSelectHeading: jumpToHeading)
+                }
+            if !mermaidSources.isEmpty {
+                barButton("Preview Mermaid diagrams", "chart.xyaxis.line") { showMermaid = true }
+            }
+            if NoteIntelligence.isAvailable {
+                barButton("Summarize & suggest (on-device)", "sparkles") { showIntelligence = true }
+            }
+            if git.status.isRepository {
+                barButton("Version history (Git)", "clock.arrow.circlepath") { showHistory = true }
+            }
+            Menu {
+                Button("Export as HTML…") {
+                    if let note = editor.note {
+                        EditorExport.exportHTML(markdown: editor.text, title: note.title)
+                    }
+                }
+                Button("Export as PDF…") {
+                    if let note = editor.note {
+                        EditorExport.exportPDF(markdown: editor.text, title: note.title)
+                    }
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Export")
+            barButton("Open this note in a new window", "macwindow.badge.plus") {
+                if let url = editor.note?.fileURL { openWindow(value: NoteRef(url)) }
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(.bar)
+    }
+
+    private func barButton(_ help: String, _ systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage).frame(width: 22, height: 18)
+        }
+        .buttonStyle(.borderless)
+        .help(help)
+    }
+
+    /// Word count of the note body (front matter excluded).
+    private var wordCount: Int {
+        FrontMatter.body(of: editor.text)
+            .split { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" }
+            .count
     }
 
     // Bridges are stateless and expensive-ish to build, so share one instance.
