@@ -11,11 +11,11 @@
 
 import Foundation
 
-/// Which wire adapter a provider uses. The five OpenAI-speakers collapse into
+/// Which wire adapter a provider uses. The OpenAI-speakers all collapse into
 /// one adapter (they differ only by config), so only three HTTP formats plus two
 /// in-process paths exist.
 enum LLMWireFormat: Sendable {
-    case openAICompatible   // OpenAI, OpenRouter, Groq, Ollama (/v1), LM Studio
+    case openAICompatible   // OpenAI, Mistral, OpenRouter, Groq, xAI, DeepSeek, Cerebras, Together, Perplexity, Ollama (local + cloud), LM Studio
     case anthropic          // Claude Messages API
     case gemini             // Google generateContent
     case foundationModels   // Apple on-device (macOS 26+)
@@ -23,7 +23,9 @@ enum LLMWireFormat: Sendable {
 }
 
 enum ProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
-    case openai, anthropic, gemini, mistral, openrouter, groq, ollama, lmstudio, apple, mlx
+    case openai, anthropic, gemini, mistral, openrouter, groq
+    case xai, deepseek, cerebras, together, perplexity, ollamaCloud
+    case ollama, lmstudio, apple, mlx
     var id: String { rawValue }
 
     var displayName: String {
@@ -34,6 +36,12 @@ enum ProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
         case .mistral: return "Mistral"
         case .openrouter: return "OpenRouter"
         case .groq: return "Groq"
+        case .xai: return "xAI (Grok)"
+        case .deepseek: return "DeepSeek"
+        case .cerebras: return "Cerebras"
+        case .together: return "Together AI"
+        case .perplexity: return "Perplexity"
+        case .ollamaCloud: return "Ollama Cloud"
         case .ollama: return "Ollama (local)"
         case .lmstudio: return "LM Studio (local)"
         case .apple: return "Apple Intelligence (on-device)"
@@ -43,7 +51,9 @@ enum ProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
 
     var wire: LLMWireFormat {
         switch self {
-        case .openai, .mistral, .openrouter, .groq, .ollama, .lmstudio: return .openAICompatible
+        case .openai, .mistral, .openrouter, .groq, .xai, .deepseek, .cerebras,
+             .together, .perplexity, .ollamaCloud, .ollama, .lmstudio:
+            return .openAICompatible
         case .anthropic: return .anthropic
         case .gemini: return .gemini
         case .apple: return .foundationModels
@@ -58,6 +68,12 @@ enum ProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
         case .mistral: return "https://api.mistral.ai/v1"
         case .openrouter: return "https://openrouter.ai/api/v1"
         case .groq: return "https://api.groq.com/openai/v1"
+        case .xai: return "https://api.x.ai/v1"
+        case .deepseek: return "https://api.deepseek.com/v1"
+        case .cerebras: return "https://api.cerebras.ai/v1"
+        case .together: return "https://api.together.xyz/v1"
+        case .perplexity: return "https://api.perplexity.ai"
+        case .ollamaCloud: return "https://ollama.com/v1"
         case .ollama: return "http://localhost:11434/v1"
         case .lmstudio: return "http://localhost:1234/v1"
         case .anthropic: return "https://api.anthropic.com"
@@ -69,7 +85,9 @@ enum ProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
     /// Whether the user must supply an API key (local servers / on-device don't).
     var requiresAPIKey: Bool {
         switch self {
-        case .openai, .anthropic, .gemini, .mistral, .openrouter, .groq: return true
+        case .openai, .anthropic, .gemini, .mistral, .openrouter, .groq,
+             .xai, .deepseek, .cerebras, .together, .perplexity, .ollamaCloud:
+            return true
         case .ollama, .lmstudio, .apple, .mlx: return false
         }
     }
@@ -98,6 +116,12 @@ enum ProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
         case .mistral: return "wind"
         case .openrouter: return "arrow.triangle.branch"
         case .groq: return "bolt"
+        case .xai: return "x.circle"
+        case .deepseek: return "water.waves"
+        case .cerebras: return "brain"
+        case .together: return "person.2"
+        case .perplexity: return "magnifyingglass"
+        case .ollamaCloud: return "cloud"
         case .ollama: return "shippingbox"
         case .lmstudio: return "desktopcomputer"
         case .apple: return "apple.logo"
@@ -113,6 +137,12 @@ enum ProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
         case .mistral: return URL(string: "https://console.mistral.ai/api-keys")
         case .openrouter: return URL(string: "https://openrouter.ai/keys")
         case .groq: return URL(string: "https://console.groq.com/keys")
+        case .xai: return URL(string: "https://console.x.ai")
+        case .deepseek: return URL(string: "https://platform.deepseek.com/api_keys")
+        case .cerebras: return URL(string: "https://cloud.cerebras.ai")
+        case .together: return URL(string: "https://api.together.ai/settings/api-keys")
+        case .perplexity: return URL(string: "https://www.perplexity.ai/settings/api")
+        case .ollamaCloud: return URL(string: "https://ollama.com/settings/keys")
         default: return nil
         }
     }
@@ -126,6 +156,12 @@ enum ProviderKind: String, CaseIterable, Codable, Identifiable, Sendable {
         case .mistral: return ["mistral-large-latest", "mistral-small-latest", "open-mistral-nemo"]
         case .openrouter: return ["openai/gpt-4o", "anthropic/claude-sonnet-4.5", "google/gemini-2.5-flash"]
         case .groq: return ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"]
+        case .xai: return ["grok-4", "grok-3", "grok-3-mini"]
+        case .deepseek: return ["deepseek-chat", "deepseek-reasoner"]
+        case .cerebras: return ["llama-3.3-70b", "gpt-oss-120b", "qwen-3-235b-a22b-instruct-2507"]
+        case .together: return ["meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct-Turbo"]
+        case .perplexity: return ["sonar", "sonar-pro", "sonar-reasoning-pro"]
+        case .ollamaCloud: return ["gpt-oss:120b", "deepseek-v3.1:671b", "gemma4:31b"]
         case .ollama: return ["llama3.2", "qwen2.5", "mistral"]
         case .lmstudio: return []
         case .apple: return ["apple-on-device"]

@@ -5,9 +5,10 @@
 //  Created by Chris Tham on 12/7/2026.
 //
 //  One adapter for every provider that speaks the OpenAI Chat Completions wire
-//  format — OpenAI, OpenRouter, Groq, Ollama (/v1), LM Studio. They differ only
-//  by configuration (base URL, key, model namespacing, a couple of headers), so
-//  they share this implementation. Backed by MacPaw/OpenAI.
+//  format — OpenAI, Mistral, OpenRouter, Groq, xAI, DeepSeek, Cerebras, Together,
+//  Perplexity, Ollama (local + cloud), LM Studio. They differ only by
+//  configuration (base URL, key, a couple of headers), so they share this
+//  implementation. Backed by MacPaw/OpenAI.
 //
 
 import Foundation
@@ -24,7 +25,9 @@ struct OpenAICompatibleProvider: LLMProvider {
         }
         let scheme = comps.scheme ?? "https"
         let port = comps.port ?? (scheme == "https" ? 443 : 80)
-        let basePath = comps.path.isEmpty ? "/v1" : comps.path
+        // Most providers namespace under /v1; Perplexity serves chat/completions
+        // at the root. A bare user-entered URL still defaults to /v1.
+        let basePath = comps.path.isEmpty ? (kind == .perplexity ? "" : "/v1") : comps.path
 
         var headers: [String: String] = [:]
         if kind == .openrouter {

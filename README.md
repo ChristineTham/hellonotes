@@ -38,7 +38,7 @@ HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps li
 **AI, on your terms**
 - On-device **Apple Intelligence** (summarise, suggest tags/links) and an **Ask Library** chat grounded in your notes, with citations.
 - An agentic **Assistant** with tools (search, read, edit-with-approval, web search/fetch), skills, and deep research.
-- Bring your own model: **local** (Apple Foundation Models, MLX, Ollama, LM Studio) or **your own cloud API key** (Anthropic, OpenAI-compatible, Gemini). Keys live in the Keychain; cloud providers are off until you configure one.
+- Bring your own model: **local** (Apple Foundation Models, MLX, Ollama, LM Studio) or **your own cloud API key** — Anthropic, Gemini, OpenAI, Mistral, Groq, OpenRouter, xAI (Grok), DeepSeek, Cerebras, Together AI, Perplexity, and Ollama Cloud. Keys live in the Keychain; cloud providers are off until you configure one.
 
 **Seamless Git sync**
 - Repo status, init, local commits, opt-in debounced auto-commit (never auto-pushes), user-initiated push/fetch, per-note **version history** (browse & restore), **clone** and **create-remote** with HTTPS token auth, and an in-app git identity.
