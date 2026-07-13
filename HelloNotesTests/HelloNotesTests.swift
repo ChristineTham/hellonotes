@@ -767,3 +767,95 @@ struct LayoutRelaxationTests {
         #expect(run() == run())
     }
 }
+
+// MARK: - Mind map model (idea tree from Markdown)
+
+@MainActor
+struct MindMapModelTests {
+
+    private func resolver(_ table: [String: URL]) -> (String) -> (url: URL, title: String)? {
+        { target in table[target].map { ($0, target) } }
+    }
+
+    @Test func buildsSectionsBulletsAndLinkedLeaves() {
+        let url = URL(fileURLWithPath: "/tmp/Other.md")
+        let text = """
+        ---
+        tags: [x]
+        ---
+
+        # My Note
+
+        Intro mentioning [[Other]].
+
+        ## Ideas
+        - First thought
+        - Second **bold** thought
+        - [[Other]]
+
+        ### Details
+        1. Numbered idea
+
+        ## Plans
+        """
+        let model = MindMapModel(rootTitle: "My Note", text: text,
+                                 resolveLink: resolver(["Other": url]))
+
+        let titles = Dictionary(uniqueKeysWithValues: model.nodes.map { ($0.id, $0.title) })
+        let root = model.nodes.first { $0.depth == 0 }
+        #expect(root?.title == "My Note")
+        // The duplicate `# My Note` heading did not become a child chip.
+        #expect(!model.nodes.contains { $0.title == "My Note" && $0.depth > 0 })
+
+        // Sections nest: Ideas and Plans at depth 1, Details under Ideas.
+        let ideas = model.nodes.first { $0.title == "Ideas" }
+        let details = model.nodes.first { $0.title == "Details" }
+        #expect(ideas?.depth == 1)
+        #expect(model.nodes.contains { $0.title == "Plans" && $0.depth == 1 })
+        #expect(details?.depth == 2)
+
+        // Bullets attach to their section, inline markdown stripped.
+        #expect(model.nodes.contains { $0.title == "Second bold thought" && $0.kind == .bullet })
+        #expect(model.nodes.contains { $0.title == "Numbered idea" && $0.kind == .bullet })
+
+        // The wiki link resolves to one linked-note leaf per section; the
+        // link-only bullet did not double as a bullet chip.
+        let leaves = model.nodes.filter { $0.kind == .linkedNote(url) }
+        #expect(leaves.count == 2)   // intro (root section) + Ideas section
+        #expect(!model.nodes.contains { $0.title.contains("[[") })
+
+        // Every non-root node is reachable from the root via edges.
+        var reachable: Set<String> = ["root"]
+        var changed = true
+        while changed {
+            changed = false
+            for edge in model.edges where reachable.contains(edge.from) && !reachable.contains(edge.to) {
+                reachable.insert(edge.to); changed = true
+            }
+        }
+        #expect(reachable.count == model.nodes.count, "all nodes connected")
+        _ = titles
+    }
+
+    @Test func ignoresCodeFencesAndEmbeds() {
+        let text = """
+        ## Code
+        ```
+        # not a heading
+        - not a bullet
+        ```
+        ![[image.png]]
+        """
+        let model = MindMapModel(rootTitle: "Root", text: text, resolveLink: { _ in nil })
+        #expect(model.nodes.contains { $0.title == "Code" })
+        #expect(!model.nodes.contains { $0.title.contains("not a") })
+        #expect(model.nodes.count == 2)   // root + Code
+    }
+
+    @Test func capsBulletsPerSection() {
+        let bullets = (1...12).map { "- Idea \($0)" }.joined(separator: "\n")
+        let model = MindMapModel(rootTitle: "Root", text: "## S\n\(bullets)",
+                                 resolveLink: { _ in nil })
+        #expect(model.nodes.filter { $0.kind == .bullet }.count == MindMapModel.maxBulletsPerSection)
+    }
+}

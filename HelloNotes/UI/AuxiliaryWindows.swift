@@ -16,15 +16,34 @@ import SwiftUI
 
 // MARK: - Graph
 
-/// The focused collection's link graph, in its own window.
+/// The focused collection's link graph, in its own window. A toolbar scope
+/// switches between the whole collection and the neighbourhood of the focused
+/// note (the click-to-focus selection), with a configurable link distance.
 struct GraphWindowView: View {
     @Environment(Library.self) private var library
     @Environment(AppearanceSettings.self) private var appearance
 
-    /// Nodes and resolved edges for the focused collection.
+    /// What the graph shows: every note, or just the notes within `depth`
+    /// links of the focused one.
+    private enum Scope: Hashable {
+        case collection
+        case aroundFocus
+    }
+
+    @State private var scope: Scope = .collection
+    @State private var focusedURL: URL?
+    @State private var depth = 2
+
+    /// Nodes and resolved edges for the current scope.
     private var graphData: (nodes: [GraphNode], edges: [GraphEdge]) {
         guard let c = library.focused else { return ([], []) }
-        let notes = c.notes
+
+        var notes = c.notes
+        if scope == .aroundFocus, let focusedURL {
+            let keep = neighbourhood(of: focusedURL, in: c, depth: depth)
+            notes = notes.filter { keep.contains($0.fileURL) }
+        }
+
         let indexByURL = Dictionary(uniqueKeysWithValues: notes.enumerated().map { ($1.fileURL, $0) })
         var edges: [GraphEdge] = []
         for (i, note) in notes.enumerated() {
@@ -37,6 +56,33 @@ struct GraphWindowView: View {
         return (notes.map { GraphNode(url: $0.fileURL, label: $0.title) }, edges)
     }
 
+    /// Every note within `depth` links of `url`, following links both ways.
+    private func neighbourhood(of url: URL, in collection: Collection, depth: Int) -> Set<URL> {
+        var visited: Set<URL> = [url]
+        var frontier = [url]
+        for _ in 0..<depth {
+            var next: [URL] = []
+            for u in frontier {
+                var adjacent: [URL] = []
+                for target in collection.linkGraph.outgoingByURL[u] ?? [] {
+                    if let dest = collection.linkGraph.resolve(target) { adjacent.append(dest) }
+                }
+                adjacent += collection.linkGraph.backlinksByURL[u] ?? []
+                for v in adjacent where !visited.contains(v) {
+                    visited.insert(v)
+                    next.append(v)
+                }
+            }
+            frontier = next
+        }
+        return visited
+    }
+
+    private var focusedTitle: String? {
+        guard let focusedURL else { return nil }
+        return library.focused?.notes.first { $0.fileURL == focusedURL }?.title
+    }
+
     var body: some View {
         let data = graphData
         Group {
@@ -47,7 +93,34 @@ struct GraphWindowView: View {
                 GraphView(nodes: data.nodes, edges: data.edges,
                           onSelect: { library.requestOpen($0) },
                           accent: appearance.resolvedAccent,
-                          isWindowed: true)
+                          isWindowed: true,
+                          focusedURL: focusedURL,
+                          onFocusChange: { url in
+                              focusedURL = url
+                              if url == nil && scope == .aroundFocus { scope = .collection }
+                          })
+            }
+        }
+        .toolbar {
+            ToolbarItemGroup {
+                Picker("Scope", selection: $scope) {
+                    Text("Whole Collection").tag(Scope.collection)
+                    Text(focusedTitle.map { "Around “\($0)”" } ?? "Around Focused Note")
+                        .tag(Scope.aroundFocus)
+                }
+                .pickerStyle(.menu)
+                .disabled(focusedURL == nil && scope == .collection)
+                .help("Show the whole collection, or just the notes near the focused one")
+
+                if scope == .aroundFocus {
+                    Picker("Link distance", selection: $depth) {
+                        ForEach(1...3, id: \.self) { d in
+                            Text("\(d) link\(d == 1 ? "" : "s")").tag(d)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .help("How many links away from the focused note to include")
+                }
             }
         }
         .navigationTitle(library.focused.map { "Graph — \($0.name)" } ?? "Graph")
@@ -64,7 +137,7 @@ struct MindMapRef: Hashable, Codable {
     init(_ url: URL) { self.url = url }
 }
 
-/// A note's link neighbourhood, in its own window.
+/// A note's idea map, in its own window.
 struct MindMapWindowView: View {
     let rootURL: URL
 
@@ -73,20 +146,49 @@ struct MindMapWindowView: View {
 
     private var collection: Collection? { library.collection(containing: rootURL) }
 
+    private var rootTitle: String {
+        collection?.notes.first { $0.fileURL == rootURL }?.title
+            ?? rootURL.deletingPathExtension().lastPathComponent
+    }
+
     var body: some View {
         Group {
-            if let c = collection {
-                MindMapView(rootURL: rootURL, notes: c.notes, linkGraph: c.linkGraph,
-                            accent: appearance.resolvedAccent) { note in
-                    library.requestOpen(note.id)
-                }
+            if let c = collection, let text = try? String(contentsOf: rootURL, encoding: .utf8) {
+                MindMapView(
+                    rootTitle: rootTitle,
+                    rootURL: rootURL,
+                    text: text,
+                    resolveLink: { target in
+                        guard let url = c.linkGraph.resolve(target),
+                              let note = c.notes.first(where: { $0.fileURL == url }) else { return nil }
+                        return (url, note.title)
+                    },
+                    accent: appearance.resolvedAccent,
+                    onOpenNote: { library.requestOpen($0) },
+                    onShowSection: { heading in showSection(heading) }
+                )
             } else {
                 ContentUnavailableView("Note Unavailable", systemImage: "brain",
                                        description: Text("This note's collection is no longer open."))
             }
         }
-        .navigationTitle("Mind Map")
+        .navigationTitle("Mind Map — \(rootTitle)")
         .frame(minWidth: 480, minHeight: 360)
+    }
+
+    /// Open the mapped note in the main window and, when a section was
+    /// clicked, scroll the editor to that heading.
+    private func showSection(_ heading: String?) {
+        library.requestOpen(rootURL)
+        guard let heading else { return }
+        Task { @MainActor in
+            // Give the main window a beat to switch notes before searching.
+            try? await Task.sleep(for: .milliseconds(400))
+            NotificationCenter.default.post(name: .hnEditorFindQuery, object: nil,
+                                            userInfo: ["query": heading])
+            try? await Task.sleep(for: .milliseconds(1200))
+            NotificationCenter.default.post(name: .hnEditorClearHighlights, object: nil)
+        }
     }
 }
 

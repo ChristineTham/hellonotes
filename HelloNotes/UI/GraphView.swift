@@ -15,7 +15,8 @@ struct GraphNode: Identifiable, Hashable {
     var id: URL { url }
 }
 
-/// A directed edge (indices into the node array).
+/// A directed edge (indices into the node array): the note at `from` links to
+/// the note at `to`.
 struct GraphEdge: Hashable {
     let from: Int
     let to: Int
@@ -32,6 +33,11 @@ enum NodePalette {
     static func color(_ index: Int) -> Color {
         colors[((index % colors.count) + colors.count) % colors.count]
     }
+
+    /// Semantic edge colours when a note is focused: the notes it links to,
+    /// and the notes that link to it.
+    static let outgoing: Color = .blue
+    static let incoming: Color = .orange
 }
 
 /// Shared zoom controls for the canvas views: −, live percentage, +, Fit.
@@ -66,19 +72,25 @@ struct ZoomControls: View {
     }
 }
 
-/// A native force-directed graph of the collection's notes and `[[wiki-links]]`,
-/// drawn with `Canvas` (no WebView). Nodes are coloured by folder, sized by
-/// connectivity; the canvas scrolls and zooms (pinch or the header controls).
-/// Click a node to open that note.
+/// A native force-directed graph of notes and their `[[wiki-links]]`, drawn
+/// with `Canvas` (no WebView). Nodes are coloured by folder and sized by
+/// connectivity; edges are directional (arrowheads point at the linked note).
+/// Click a note to focus it — its outgoing links and backlinks light up in
+/// two colours and everything else dims; double-click to open the note.
+/// The canvas scrolls and zooms (pinch or the header controls).
 struct GraphView: View {
     let nodes: [GraphNode]
     let edges: [GraphEdge]
     let onSelect: (URL) -> Void
-    /// Fallback tint (used by the header); nodes take their colour per folder.
+    /// Fallback tint (used by the focus ring); nodes take their colour per folder.
     var accent: Color = .accentColor
     /// When hosted in its own window there is no sheet to dismiss: hide the
-    /// Done button and keep the graph open after a node is clicked.
+    /// Done button, and clicking focuses rather than dismissing.
     var isWindowed = false
+    /// The focused note (drives directional edge colouring). Owned by the host
+    /// so it can also drive scoping.
+    var focusedURL: URL?
+    var onFocusChange: (URL?) -> Void = { _ in }
 
     @Environment(\.dismiss) private var dismiss
     @State private var positions: [CGPoint] = []
@@ -124,6 +136,10 @@ struct GraphView: View {
         let unique = Array(Set(folders)).sorted()
         let indexOf = Dictionary(uniqueKeysWithValues: unique.enumerated().map { ($1, $0) })
         return folders.map { NodePalette.color(indexOf[$0] ?? 0) }
+    }
+
+    private var focusedIndex: Int? {
+        focusedURL.flatMap { url in nodes.firstIndex { $0.url == url } }
     }
 
     private func radius(degree: Int) -> CGFloat {
@@ -172,7 +188,39 @@ struct GraphView: View {
                 }
             }
         }
+        .overlay(alignment: .bottomLeading) { canvasFooter }
         .task(id: nodes) { relayout() }
+    }
+
+    /// Discoverability footer: a hint while nothing is focused; a direction
+    /// legend (plus clear button) while a note is.
+    @ViewBuilder
+    private var canvasFooter: some View {
+        if isWindowed {
+            HStack(spacing: 10) {
+                if let f = focusedIndex {
+                    Text(nodes[f].label).fontWeight(.semibold).lineLimit(1)
+                    Label("Links to", systemImage: "arrow.right")
+                        .foregroundStyle(NodePalette.outgoing)
+                    Label("Linked from", systemImage: "arrow.left")
+                        .foregroundStyle(NodePalette.incoming)
+                    Button {
+                        onFocusChange(nil)
+                    } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.borderless)
+                        .help("Clear focus")
+                        .accessibilityLabel("Clear focus")
+                } else {
+                    Text("Click a note to trace its links · double-click to open")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.thinMaterial, in: Capsule())
+            .padding(10)
+        }
     }
 
     private var graphCanvas: some View {
@@ -180,19 +228,71 @@ struct GraphView: View {
             guard positions.count == nodes.count else { return }
             let colors = nodeColors
             let deg = degrees
+            let focus = focusedIndex
 
-            // Edges — a soft gradient between the endpoint colours.
+            // Nodes connected to the focus (they stay at full strength).
+            var undimmed = Set<Int>()
+            if let f = focus {
+                undimmed.insert(f)
+                for edge in edges {
+                    if edge.from == f { undimmed.insert(edge.to) }
+                    if edge.to == f { undimmed.insert(edge.from) }
+                }
+            }
+
+            // Edges — directional: the line stops at the target's rim and ends
+            // in an arrowhead. With a focused note, its outgoing links and
+            // backlinks take the two semantic colours; the rest fade.
             for edge in edges where edge.from < positions.count && edge.to < positions.count {
                 let a = scaled(positions[edge.from])
                 let b = scaled(positions[edge.to])
-                var path = Path()
-                path.move(to: a)
-                path.addLine(to: b)
-                let shading = GraphicsContext.Shading.linearGradient(
-                    Gradient(colors: [colors[edge.from].opacity(0.55), colors[edge.to].opacity(0.55)]),
-                    startPoint: a, endPoint: b
-                )
-                context.stroke(path, with: shading, lineWidth: max(1, 1.3 * zoom))
+                let rA = radius(degree: deg[edge.from]) * zoom
+                let rB = radius(degree: deg[edge.to]) * zoom
+                let d = hypot(b.x - a.x, b.y - a.y)
+                guard d > rA + rB + 6 else { continue }
+                let ux = (b.x - a.x) / d, uy = (b.y - a.y) / d
+
+                let arrowLength = max(5, 6.5 * zoom)
+                let start = CGPoint(x: a.x + ux * (rA + 1), y: a.y + uy * (rA + 1))
+                let tip = CGPoint(x: b.x - ux * (rB + 1.5), y: b.y - uy * (rB + 1.5))
+                let base = CGPoint(x: tip.x - ux * arrowLength, y: tip.y - uy * arrowLength)
+
+                let shading: GraphicsContext.Shading
+                var lineWidth = max(1, 1.3 * zoom)
+                if let f = focus {
+                    if edge.from == f {
+                        shading = .color(NodePalette.outgoing.opacity(0.9))
+                        lineWidth = max(1.4, 1.8 * zoom)
+                    } else if edge.to == f {
+                        shading = .color(NodePalette.incoming.opacity(0.9))
+                        lineWidth = max(1.4, 1.8 * zoom)
+                    } else {
+                        shading = .color(.secondary.opacity(0.10))
+                    }
+                } else {
+                    shading = .linearGradient(
+                        Gradient(colors: [colors[edge.from].opacity(0.55), colors[edge.to].opacity(0.55)]),
+                        startPoint: a, endPoint: b
+                    )
+                }
+
+                var line = Path()
+                line.move(to: start)
+                line.addLine(to: base)
+                context.stroke(line, with: shading, lineWidth: lineWidth)
+
+                // Arrowhead at the target's rim.
+                let wing = arrowLength * 0.55
+                var head = Path()
+                head.move(to: tip)
+                head.addLine(to: CGPoint(x: base.x - uy * wing, y: base.y + ux * wing))
+                head.addLine(to: CGPoint(x: base.x + uy * wing, y: base.y - ux * wing))
+                head.closeSubpath()
+                if focus != nil {
+                    context.fill(head, with: shading)
+                } else {
+                    context.fill(head, with: .color(colors[edge.to].opacity(0.75)))
+                }
             }
 
             // Nodes — folder-coloured orbs with a soft shadow, plus labels.
@@ -202,16 +302,24 @@ struct GraphView: View {
                 let rect = CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)
                 let circle = Circle().path(in: rect)
 
-                var shadowed = context
+                var ctx = context
+                if focus != nil && !undimmed.contains(i) { ctx.opacity = 0.25 }
+
+                var shadowed = ctx
                 shadowed.addFilter(.shadow(color: .black.opacity(0.30), radius: 3 * zoom, y: 1.5 * zoom))
                 shadowed.fill(circle, with: .radialGradient(
                     Gradient(colors: [.white.opacity(0.45), colors[i]]),
                     center: CGPoint(x: p.x - r * 0.35, y: p.y - r * 0.4),
                     startRadius: 0, endRadius: r * 1.5
                 ))
-                context.stroke(circle, with: .color(.white.opacity(0.45)), lineWidth: max(0.8, 0.9 * zoom))
+                ctx.stroke(circle, with: .color(.white.opacity(0.45)), lineWidth: max(0.8, 0.9 * zoom))
 
-                context.draw(
+                if i == focusedIndex {
+                    let ringRect = rect.insetBy(dx: -4 * zoom, dy: -4 * zoom)
+                    ctx.stroke(Circle().path(in: ringRect), with: .color(accent), lineWidth: max(1.6, 2 * zoom))
+                }
+
+                ctx.draw(
                     Text(nodes[i].label)
                         .font(.system(size: 11 * zoom, weight: .medium))
                         .foregroundStyle(.primary),
@@ -221,10 +329,31 @@ struct GraphView: View {
         }
         .contentShape(.rect)
         .gesture(
-            SpatialTapGesture().onEnded { value in
-                if let i = nearestNode(to: value.location) {
-                    onSelect(nodes[i].url)
-                    if !isWindowed { dismiss() }
+            ExclusiveGesture(
+                SpatialTapGesture(count: 2),
+                SpatialTapGesture()
+            )
+            .onEnded { value in
+                switch value {
+                case .first(let double):
+                    // Double-click: open the note.
+                    if let i = nearestNode(to: double.location) {
+                        onSelect(nodes[i].url)
+                        if !isWindowed { dismiss() }
+                    }
+                case .second(let single):
+                    if isWindowed {
+                        // Click: focus (or clear on a repeat / empty click).
+                        if let i = nearestNode(to: single.location) {
+                            onFocusChange(nodes[i].url == focusedURL ? nil : nodes[i].url)
+                        } else {
+                            onFocusChange(nil)
+                        }
+                    } else if let i = nearestNode(to: single.location) {
+                        // Sheets keep the original click-to-open behaviour.
+                        onSelect(nodes[i].url)
+                        dismiss()
+                    }
                 }
             }
         )

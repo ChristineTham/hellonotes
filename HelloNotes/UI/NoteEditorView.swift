@@ -733,7 +733,7 @@ struct NoteEditorView: View {
                 .popover(isPresented: $showOutline, arrowEdge: .bottom) {
                     OutlineView(text: editor.text, onSelectHeading: jumpToHeading)
                 }
-            barButton("Mind map of this note's links", "brain") { onShowMindMap() }
+            barButton("Mind map of this note's ideas", "brain") { onShowMindMap() }
             if MarpSlides.isMarp(editor.text) {
                 barButton("Present as slides (Marp)", "rectangle.on.rectangle") { showSlides = true }
             }
