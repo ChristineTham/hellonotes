@@ -10,11 +10,17 @@
 		8768A2523001B49B00346ACB /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = 8768A2513001B49B00346ACB /* BeautifulMermaid */; };
 		8768A2543001B49B00346ACB /* MermaidPlayground in Frameworks */ = {isa = PBXBuildFile; productRef = 8768A2533001B49B00346ACB /* MermaidPlayground */; };
 		8768A2573001B5FE00346ACB /* SwiftGitX in Frameworks */ = {isa = PBXBuildFile; productRef = 8768A2563001B5FE00346ACB /* SwiftGitX */; };
+		8768A2593001B75700346ACB /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 8768A2583001B75100346ACB /* README.md */; };
 		8768A2E23001C10000346ACB /* MarkdownEngine in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = 8768A2E03001C10000346ACB /* MarkdownEngine */; };
 		8768A2E33001C10000346ACB /* MarkdownEngineCodeBlocks in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = 8768A2E13001C10000346ACB /* MarkdownEngineCodeBlocks */; };
 		8768A2E63001C10000346ACB /* MarkdownEngineLatex in Frameworks */ = {isa = PBXBuildFile; platformFilters = (macos, ); productRef = 8768A2E43001C10000346ACB /* MarkdownEngineLatex */; };
 		8768A2E73001C10000346ACB /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = 8768A2E53001C10000346ACB /* Markdown */; };
-		8768A2593001B75700346ACB /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 8768A2583001B75100346ACB /* README.md */; };
+		87B9A8DB3004E31B0026D3ED /* OpenAI in Frameworks */ = {isa = PBXBuildFile; productRef = CAFE000000000000000000B1 /* OpenAI */; };
+		87B9A8DC3004E31B0026D3ED /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = CAFE000000000000000000B3 /* MLXLLM */; };
+		87B9A8DD3004E31B0026D3ED /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = CAFE000000000000000000B4 /* MLXLMCommon */; };
+		87B9A8DE3004E31B0026D3ED /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = CAFE000000000000000000B5 /* Tokenizers */; };
+		87B9A8DF3004E31B0026D3ED /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = CAFE000000000000000000B6 /* Hub */; };
+		87B9AAA63004F6B80026D3ED /* ElkSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 87B9AAA53004F6B80026D3ED /* ElkSwift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -79,6 +85,12 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				87B9A8DF3004E31B0026D3ED /* Hub in Frameworks */,
+				87B9A8DE3004E31B0026D3ED /* Tokenizers in Frameworks */,
+				87B9A8DD3004E31B0026D3ED /* MLXLMCommon in Frameworks */,
+				87B9A8DC3004E31B0026D3ED /* MLXLLM in Frameworks */,
+				87B9AAA63004F6B80026D3ED /* ElkSwift in Frameworks */,
+				87B9A8DB3004E31B0026D3ED /* OpenAI in Frameworks */,
 				8768A2523001B49B00346ACB /* BeautifulMermaid in Frameworks */,
 				8768A2543001B49B00346ACB /* MermaidPlayground in Frameworks */,
 				8768A2573001B5FE00346ACB /* SwiftGitX in Frameworks */,
@@ -162,6 +174,7 @@
 				CAFE000000000000000000B4 /* MLXLMCommon */,
 				CAFE000000000000000000B5 /* Tokenizers */,
 				CAFE000000000000000000B6 /* Hub */,
+				87B9AAA53004F6B80026D3ED /* ElkSwift */,
 			);
 			productName = HelloNotes;
 			productReference = 8759E1E03001AF2E008F8C92 /* HelloNotes.app */;
@@ -254,6 +267,7 @@
 				CAFE000000000000000000A1 /* XCRemoteSwiftPackageReference "OpenAI" */,
 				CAFE000000000000000000A3 /* XCRemoteSwiftPackageReference "mlx-swift-examples" */,
 				CAFE000000000000000000A4 /* XCRemoteSwiftPackageReference "swift-transformers" */,
+				87B9AAA43004F6B80026D3ED /* XCRemoteSwiftPackageReference "elk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8759E1E13001AF2E008F8C92 /* Products */;
@@ -358,10 +372,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = HelloNotes/HelloNotes.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AHC7Q4GW27;
-				CODE_SIGN_ENTITLEMENTS = HelloNotes/HelloNotes.entitlements;
+				DEVELOPMENT_TEAM = RPL5R637DS;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -411,10 +425,10 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = HelloNotes/HelloNotes.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AHC7Q4GW27;
-				CODE_SIGN_ENTITLEMENTS = HelloNotes/HelloNotes.entitlements;
+				DEVELOPMENT_TEAM = RPL5R637DS;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -492,7 +506,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = AHC7Q4GW27;
+				DEVELOPMENT_TEAM = RPL5R637DS;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -554,7 +568,7 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = AHC7Q4GW27;
+				DEVELOPMENT_TEAM = RPL5R637DS;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
@@ -579,7 +593,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AHC7Q4GW27;
+				DEVELOPMENT_TEAM = RPL5R637DS;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
@@ -605,7 +619,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AHC7Q4GW27;
+				DEVELOPMENT_TEAM = RPL5R637DS;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
@@ -630,7 +644,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AHC7Q4GW27;
+				DEVELOPMENT_TEAM = RPL5R637DS;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
@@ -655,7 +669,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AHC7Q4GW27;
+				DEVELOPMENT_TEAM = RPL5R637DS;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
 				MACOSX_DEPLOYMENT_TARGET = 15.0;
@@ -749,6 +763,14 @@
 				minimumVersion = 0.4.0;
 			};
 		};
+		87B9AAA43004F6B80026D3ED /* XCRemoteSwiftPackageReference "elk-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/lukilabs/elk-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.2;
+			};
+		};
 		CAFE000000000000000000A1 /* XCRemoteSwiftPackageReference "OpenAI" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/MacPaw/OpenAI.git";
@@ -810,6 +832,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8768A24E3001B3D300346ACB /* XCRemoteSwiftPackageReference "swift-markdown" */;
 			productName = Markdown;
+		};
+		87B9AAA53004F6B80026D3ED /* ElkSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 87B9AAA43004F6B80026D3ED /* XCRemoteSwiftPackageReference "elk-swift" */;
+			productName = ElkSwift;
 		};
 		CAFE000000000000000000B1 /* OpenAI */ = {
 			isa = XCSwiftPackageProductDependency;

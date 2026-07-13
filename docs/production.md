@@ -13,7 +13,7 @@ to an approved Mac App Store release. Copy‑paste values are given for every fi
 |---|---|
 | App name | **HelloNotes** |
 | Bundle ID | `com.hellotham.HelloNotes` |
-| Apple team | **Hello Tham** — `AHC7Q4GW27` (signs as `Apple Development / Apple Distribution: info@hellotham.com`) |
+| Apple team | **Hello Tham Pty. Ltd.** — `RPL5R637DS` (Organization; Account Holder Chris Tham; signs as `Apple Development / Apple Distribution`) |
 | Category | Productivity (`public.app-category.productivity`) |
 | Version / build | `MARKETING_VERSION = 1.0`, `CURRENT_PROJECT_VERSION = 1` |
 | Sandbox / Hardened Runtime | Enabled (required for the store) |
@@ -108,7 +108,7 @@ exempt TLS/HTTPS), so App Store Connect won’t ask on each upload.
 ### 1e. Confirm distribution signing
 Target ▸ **Signing & Capabilities** ▸ **Release**:
 - **Automatically manage signing** ✔
-- **Team:** Hello Tham (`AHC7Q4GW27`)
+- **Team:** Hello Tham Pty. Ltd. (`RPL5R637DS`)
 - Signing Certificate resolves to **Apple Distribution** for the Release config.
 Nothing else to do — Xcode makes the cert/profile on first archive.
 
@@ -334,7 +334,7 @@ Create `ExportOptions.plist` in the repo root:
 <plist version="1.0">
 <dict>
     <key>method</key>            <string>app-store-connect</string>
-    <key>teamID</key>            <string>AHC7Q4GW27</string>
+    <key>teamID</key>            <string>RPL5R637DS</string>
     <key>destination</key>       <string>upload</string>
     <key>signingStyle</key>      <string>automatic</string>
 </dict>
