@@ -1,8 +1,6 @@
 # HelloNotes — Product Requirements Document
 
-> Product name: **HelloNotes** · Status: **v1.0 release candidate** · Last updated: 2026-07-13 · Owner: Chris Tham
->
-> **Post-v0.1 addendum (2026-07-13):** since this PRD was written the app has shipped, beyond the v0.1 scope below: a **multi-collection Library** (several vaults open at once, launcher + recents), an **AI layer** (on-device Apple Intelligence *and optional user-configured cloud providers* — Anthropic, OpenAI-compatible, Gemini, MLX/Ollama/LM Studio local models — with an agentic Assistant, Ask-Library retrieval chat, skills, and web search/fetch tools), **editor view modes** (Edit / rendered Preview / Markdown source / Split), a **file viewer** for non-Markdown attachments (PDF/images/CSV), **Marp slides**, a **content-based Mind Map** plus a directional **Graph** view, **git hosting integration** (clone, create remote, HTTPS token auth), **Obsidian vault import**, app-wide **appearance theming**, and a launch **splash screen**. The "No WebViews" non-goal below now has two scoped exceptions: the optional rendered Preview/Split pane and the Marp slides preview use `WKWebView` (the *editor* remains fully native TextKit 2). Minimum macOS is now **15.0**.
+> Product name: **HelloNotes** · Status: **v1.0 (shipped)** · Last updated: 2026-07-13 · Owner: Chris Tham
 
 ---
 
@@ -12,7 +10,7 @@ HelloNotes is a **native, local-first Markdown knowledge base for the Apple ecos
 
 The product bet: a knowledge tool built on **AppKit + TextKit 2 + SwiftUI** can deliver editing latency, scroll performance, and OS integration that web-tech competitors structurally cannot, while keeping the user's data in an open, portable, greppable format they fully own.
 
-This document defines the product vision, the users, and a scoped **MVP (v0.1)**, plus the roadmap beyond it. Technical design lives in [architecture.md](architecture.md); the build sequence lives in [implementation-plan.md](implementation-plan.md).
+This document defines the product vision, the users, the feature set shipped in **v1.0** (the original v0.1 MVP plus the post-MVP feature areas), and what remains on the roadmap. Technical design lives in [architecture.md](architecture.md); the build sequence lives in [implementation-plan.md](implementation-plan.md).
 
 ## 2. Problem statement
 
@@ -46,7 +44,7 @@ No tool today combines: **(a)** genuinely native macOS performance and feel, **(
 
 ### Non-goals (explicitly out of scope)
 - No proprietary storage: **no CoreData, no SwiftData, no iCloud document store.**
-- No WebViews / Electron / embedded browser for *editing* (Mermaid, math, and code all render natively in the editor). *Post-v0.1 exception: the optional read-only rendered Preview/Split mode and the Marp slides preview use `WKWebView`; the editor itself stays native TextKit 2.*
+- No WebViews / Electron / embedded browser in the *editing path* (Mermaid, math, code, callouts, and transclusions all render natively in the editor; the macOS Preview mode is the same native engine, read-only). *Two scoped v1.0 exceptions: the Marp slides preview, and the iOS read-only Preview (MarkdownEngine is AppKit-only), each use a `WKWebView`.*
 - No real-time collaboration or hosted backend.
 - No plugin runtime in the MVP (extensibility is a deliberate later question, à la Vellum's "pure editor" stance).
 - No proprietary sync service — sync is the user's own Git remote.
@@ -72,16 +70,17 @@ Where we **diverge**: HelloNotes adds the *knowledge-graph* layer (wiki-links + 
 
 ## 7. Feature requirements
 
-Priority: **P0 = MVP**, **P1 = fast-follow**, **P2 = roadmap**. **v0.1 shipped P0–P2** across the board on macOS (see the status box below and [implementation-plan.md](implementation-plan.md)).
+Priority: **P0 = MVP**, **P1 = fast-follow**, **P2 = roadmap**. **v1.0 shipped P0–P2** across the board on macOS, plus the post-MVP feature areas in the status box (see [implementation-plan.md](implementation-plan.md) for the build sequence).
 
-> ### ✅ Implementation status — v0.1 (shipped)
-> **Vault & files:** vault selection + persistent bookmark, Markdown indexing, create/delete (to Trash), nested folder tree with sort, external-change detection + conflict handling, image paste → `assets/`.
-> **Editor:** live TextKit 2 Markdown (bold/italic/code, headings, lists, task lists, quotes, tables, footnotes), debounced atomic autosave + saved indicator, syntax-highlighted code, LaTeX math, native Mermaid preview, multi-tab editing, open-in-new-window, document statistics, read-only outline, HTML/PDF export, editable typed **properties** (front matter).
-> **Knowledge graph:** `[[wiki-links]]` (clickable, create-on-miss) with **autocomplete**, **aliases**, **link-to-heading** completion, backlinks + **outgoing links** + **unlinked mentions** (one-click link), native **graph view**.
-> **Search & nav:** title filter, full-text search with snippets, Open Quickly (⌘O) over notes/headings/aliases, tags + **nested tags** tree, **bookmarks**, **daily notes** + **templates**.
-> **Git:** repo status, init, local commit, opt-in auto-commit, push/fetch, per-note **version history** (browse + restore).
-> **Platform:** macOS 3-column shell; iOS/iPadOS adaptive shell (browse/read/plain-text-edit companion sharing Core/State).
-> **Deferred** (engine walls / roadmap): heading scroll on link click, note transclusion `![[…]]`, callouts, comments, tag autocomplete, pull/merge, richer iOS editor — see [unimplemented.md](unimplemented.md).
+> ### ✅ Implementation status — v1.0 (shipped)
+> **Library & files:** a **multi-collection library** (several vaults open at once) with launcher, recents, and saved library sets; **Obsidian vault import**; persistent security-scoped bookmarks; Markdown indexing; create/rename (with link rewrite)/duplicate/delete (to Trash); nested folder tree with sort + **drag-and-drop moving** + empty-folder creation; external-change detection + conflict handling; image paste → `assets/`; **smart paste** (HTML → Markdown); non-Markdown attachments (PDF/image/CSV/other) in a native **file viewer**.
+> **Editor:** live TextKit 2 Markdown (bold/italic/code, headings, lists, task lists, quotes, tables, footnotes), **view modes** (Edit / native read-only Preview / Markdown source / Split), debounced atomic autosave + saved indicator, syntax-highlighted code, LaTeX math, **inline native Mermaid**, Obsidian-style **callouts** (collapsible, iconed) + `%%comments%%` + hidden front matter, **note transclusion** `![[Note]]`/`![[Note#heading]]`, **⌘F find & replace**, **scroll-to-heading** (outline, links, search), multi-tab editing, open-in-new-window, document statistics, outline, HTML/PDF export, editable typed **properties**, **Marp slide decks**, and a full **Format menu**.
+> **Knowledge graph:** `[[wiki-links]]` (clickable, create-on-miss) with **autocomplete**, **aliases**, **link-to-heading** completion, backlinks + **outgoing links** + **unlinked mentions** (one-click link), a directional **Graph** view (arrowed edges, click-to-trace focus, whole-collection or around-a-note scope), and a content-based **Mind Map** of a note's ideas.
+> **Search & nav:** title filter, full-text search with snippets, Open Quickly (⇧⌘O) over notes/headings/aliases, tags + **nested tags** tree + **tag autocomplete**, **bookmarks**, **daily notes** + **templates**.
+> **AI (optional):** on-device Apple Intelligence (summarise / suggest tags / suggest links), **Ask Library** retrieval chat with citations, an agentic **Assistant** (tools incl. web search/fetch, note editing behind explicit approval, skills, deep research), and pluggable providers — local (Apple, MLX, Ollama, LM Studio) or the user's own cloud key (Anthropic, OpenAI-compatible, Gemini). Keys in the Keychain; no developer backend.
+> **Git:** repo status, init, local commit, opt-in auto-commit (never auto-pushes), push/fetch, per-note **version history** (browse + restore), **clone** + **create-remote** with HTTPS token auth (Keychain), in-app git identity.
+> **Platform:** macOS 3-column shell with full menu bar, windowed Graph/Mind Map/Assistant/Ask Library, appearance settings (theme/accent/text size), launch splash with build info; iOS/iPadOS adaptive shell (browse / WKWebView preview / plain-text edit companion sharing Core/State).
+> **Deferred** (engine walls / roadmap): create-on-miss from an in-editor muted link click, git pull/merge + conflict UI, richer iOS editor — see [unimplemented.md](unimplemented.md).
 
 ### 7.1 Vault & file management
 - **P0** Select a vault folder; remember it across launches (security-scoped bookmark).
@@ -122,7 +121,7 @@ Priority: **P0 = MVP**, **P1 = fast-follow**, **P2 = roadmap**. **v0.1 shipped P
 - **P1** Math (SwiftMath). **P0** Code highlighting (HighlighterSwift).
 
 ### 7.7 Platform
-- **P0** macOS 14+ 3-column shell (`NavigationSplitView`).
+- **P0** macOS 15+ 3-column shell (`NavigationSplitView`).
 - **P2** iOS/iPadOS shell (`NavigationStack`), sharing the Core/State layers.
 
 ## 8. Key user stories (MVP)
@@ -152,9 +151,9 @@ Three-column macOS layout:
 - Every code change must compile clean (0 errors) before it's considered done.
 
 ## 12. Open questions
-1. **Preview model:** ✅ *Resolved* — always-live inline styling (MarkdownEngine). No source/preview toggle.
+1. **Preview model:** ✅ *Resolved (v1.0)* — always-live inline styling remains the default, joined by explicit view modes (Edit / native read-only Preview / Markdown source / Split).
 2. **Auto-commit cadence:** ✅ *Resolved* — opt-in debounced auto-commit plus a manual Commit/Sync; never auto-pushes.
 3. **Wiki-link create-on-miss:** ✅ *Resolved (v0.1)* — new linked notes are created in the vault root. (Configurable location is a possible later refinement.)
-4. **Extensibility:** *Open* — still holding Vellum's "pure editor" line; no plugin surface in v0.1.
-5. **iOS timing:** ✅ *Largely resolved* — Core/State are platform-agnostic and shared; iOS ships as a browse/read/plain-text-edit companion. A rich iOS editor remains future work (see [unimplemented.md](unimplemented.md)).
-6. **Heading navigation & embeds:** *Open (blocked)* — scroll-to-heading and `![[transclusion]]` need MarkdownEngine hooks it doesn't expose; tracked in [unimplemented.md](unimplemented.md).
+4. **Extensibility:** *Open* — still holding Vellum's "pure editor" line; no plugin surface in v1.0. (AI "skills" — Markdown instruction notes in the collection — cover part of this space without a plugin runtime.)
+5. **iOS timing:** ✅ *Largely resolved* — Core/State are platform-agnostic and shared; iOS ships as a browse/preview/plain-text-edit companion. A rich iOS editor remains future work (see [unimplemented.md](unimplemented.md)).
+6. **Heading navigation & embeds:** ✅ *Resolved (v1.0, via the MarkdownEngine fork)* — scroll-to-heading works everywhere (outline, `[[Note#heading]]`, search) and `![[transclusion]]` renders inline cards; see [markdown-engine-strategy.md](markdown-engine-strategy.md).

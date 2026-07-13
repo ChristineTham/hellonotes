@@ -1,6 +1,6 @@
 # Unimplemented & Deferred
 
-> As of **v0.1**.
+> As of **v1.0** (2026-07-13).
 
 A running register of everything scoped, approved, or attempted but **not** shipped,
 with the reason and what would unblock it. Revisit periodically.
@@ -84,22 +84,23 @@ we'd need. Several features have been shaped around these walls.
 - 🛠️ **Merge-conflict resolution UI** *(Milestone 4, P2)*
   Depends on merge existing first. No UI to resolve conflicting hunks.
 
-- 🔒 / 🛠️ **Remote auth & real-remote push** *(Milestone 4)*
-  Push/fetch rely on libgit2's configured credentials (SSH agent / stored tokens);
-  the app deliberately doesn't manage credentials (safety rule). Push is implemented
-  but **has not been exercised against a real remote**. **Unblock:** test against a
-  real remote; decide how far credential handling can go within policy.
+- ✅ **Remote auth** *(Milestone 4 → resolved in Milestone 11)* — the app now manages
+  **HTTPS personal-access tokens in the Keychain** (`GitCredentials`), with clone and
+  create-remote flows (`GitHostAPI`). SSH remotes still rely on libgit2's ambient
+  credentials. 🛠️ *Residual:* push against a real remote deserves one more manual
+  smoke test on a fresh machine before it's advertised.
 
-- 🛠️ **In-app Git identity** *(Milestone 4)*
-  Commits fall back to the OS account identity when global git config is unreadable
-  (`ensureCommitIdentity`). There's no settings UI to set a proper name/email.
+- ✅ **In-app Git identity** *(Milestone 4 → resolved in Milestone 11)* — Git Settings
+  stores a name/email that `ensureCommitIdentity` writes into the repo's local config,
+  falling back to global config, then the OS account name.
 
 ---
 
 ## iOS / iPadOS parity
 
-The iOS/iPadOS build is a browse / read / plain-text-edit companion. The following
-exist on macOS but not on iOS yet.
+The iOS/iPadOS build is a browse / **rendered-preview** / plain-text-edit companion
+(v1.0 added the WKWebView Preview mode, view modes, and a settings sheet for
+theme/accent/text size). The following exist on macOS but not on iOS yet.
 
 - 🍎🧱 **Rich iOS editor** *(Milestone 6)*
   iOS uses a plain `TextEditor` (same `EditorModel`, autosave, conflict logic). Live
@@ -107,16 +108,13 @@ exist on macOS but not on iOS yet.
   AppKit-only, so they're absent on iOS. **Unblock:** a UIKit/TextKit 2 iOS editor
   (either an iOS-capable MarkdownEngine or a new editor).
 
-- 🍎 **macOS-only features not yet on iOS** *(Milestone 6)*
-  FSEvents external-change watching, "Open Quickly" (⌘O), the folder tree, the tags
-  sidebar, the Git UI, image paste → assets, and Mermaid preview.
-
-- 🍎 **Bear/Lettera companions are macOS-only** *(Milestones 7 & 8)*
-  Document statistics, the outline, HTML/PDF export, multi-tab editing, the nested-tag
-  **tree UI**, Git version history, wiki-link autocomplete, and open-in-new-window are
-  all macOS-only. (Note: the shared `Core`/`State` pieces — `TagTree`, nested-tag
-  matching in `VaultSearchModel`, `DocumentStatistics`, `GitService.history` — are
-  cross-platform and could back iOS UIs later.)
+- 🍎 **macOS-only features not yet on iOS** *(Milestones 6–13)*
+  FSEvents external-change watching, "Open Quickly" (⇧⌘O), the tags sidebar tree UI,
+  the Git UI, image paste → assets, Mermaid preview, document statistics, the outline,
+  HTML/PDF export, multi-tab editing, version history, wiki-link autocomplete,
+  open-in-new-window, the Graph/Mind Map/Slides views, the file viewer, and the whole
+  AI stack (Assistant / Ask Library / Intelligence). (The shared `Core`/`State` pieces
+  are cross-platform and could back iOS UIs later.)
 
 ---
 
@@ -127,13 +125,25 @@ exist on macOS but not on iOS yet.
   fast for target vault sizes; revisit with per-note incremental updates when
   large-vault profiling warrants it.
 
+- 🛠️ **Silent write failures in two batch paths** *(v1.0 review)*
+  `MacContentView.linkMention` and `Collection.rewriteWikiLinks` use `try?` writes —
+  a failed write (permissions, disk full) silently skips a note. Surface errors and
+  report which notes weren't updated.
+
+- 🛠️ **Timing-based scroll-to-heading hand-off** *(v1.0 review)*
+  "Open note → find heading → clear highlight" flows sequence with fixed delays
+  (350 ms–1.2 s). On a slow note load the scroll can miss. Replace with an
+  editor-ready signal.
+
+- 🛠️ **English-only** *(v1.0 review)* — `Localizable.xcstrings` is empty; UI copy is
+  inline literals. Run string extraction if localisation is ever wanted.
+
 ---
 
 ## Notes for revisiting
 
-- The 🧱 editor items cluster around one theme: **MarkdownEngine gives us text +
-  a few inline-token/link hooks, but no general "act on a source range / caret
-  offset / custom render" surface.** If we ever adopt a fork or a different editor,
-  scroll-to-section, tag autocomplete, inline Mermaid, front-matter hiding, and
-  create-on-miss could likely all be revisited together.
+- **The MarkdownEngine walls are gone**: every 🧱 editor item from v0.1 was resolved
+  via the fork (see [markdown-engine-strategy.md](markdown-engine-strategy.md));
+  the one residual is in-editor **create-on-miss** on muted links, which still needs
+  an upstream link-click callback for unresolved targets.
 - 🛠️ **Backlog** items are the cheapest wins — they need no upstream changes.

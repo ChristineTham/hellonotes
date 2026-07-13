@@ -11,7 +11,7 @@ to an approved Mac App Store release. Copy‑paste values are given for every fi
 
 | Thing | Value |
 |---|---|
-| App name (working) | **HelloNotes** |
+| App name | **HelloNotes** |
 | Bundle ID | `com.hellotham.HelloNotes` |
 | Apple team | **Hello Tham** — `AHC7Q4GW27` (signs as `Apple Development / Apple Distribution: info@hellotham.com`) |
 | Category | Productivity (`public.app-category.productivity`) |

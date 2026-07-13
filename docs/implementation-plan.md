@@ -1,12 +1,10 @@
 # HelloNotes — Implementation Plan
 
-> Status: **v0.1 shipped (Milestones 0–9)** · Last updated: 2026-07-11 · Companion to [PRD.md](PRD.md) and [architecture.md](architecture.md)
+> Status: **v1.0 shipped (Milestones 0–13)** · Last updated: 2026-07-13 · Companion to [PRD.md](PRD.md) and [architecture.md](architecture.md)
 
 Milestone-based build sequence. Each milestone ends with a **green build** (`xcodebuild … build` → 0 errors) and, where noted, tests. Priorities map to the PRD (P0 = MVP).
 
-> **v0.1 = Milestones 0–9**, all ✅ done: foundation, editing MVP, knowledge graph & math, search & navigation, Git sync, native rendering, iOS/iPadOS shell, writing companions (Lettera-inspired), organization & navigation (Bear-inspired), and core knowledge-base features (Obsidian-inspired). Builds clean on macOS + iOS; **52 unit tests** pass. Deferred items and their rationale live in [unimplemented.md](unimplemented.md).
->
-> **Post-v0.1 (shipped without milestones, 2026-07-11 → 13):** multi-collection Library + launcher/recents; the full LLM/agent stack (five providers, assistant, Ask Library, skills, deep research, web tools, permission broker); editor view modes (Edit/Preview/Markdown/Split); file viewer for non-Markdown attachments; Marp slides; content-based Mind Map + directional scoped Graph; git hosting (clone/create-remote/HTTPS tokens); Obsidian import; appearance theming; menu-bar/usability + HIG passes; splash screen with build stamping. See the addendum in [architecture.md](architecture.md) for where these sit in the layering.
+> **v0.1 = Milestones 0–9**: foundation, editing MVP, knowledge graph & math, search & navigation, Git sync, native rendering, iOS/iPadOS shell, writing companions (Lettera-inspired), organization & navigation (Bear-inspired), and core knowledge-base features (Obsidian-inspired). **v1.0 adds Milestones 10–13** (engine fork, library & git hosting, AI, exploration views & production hardening — summarised below). Builds clean on macOS + iOS; **52 unit tests** pass. Deferred items and their rationale live in [unimplemented.md](unimplemented.md).
 
 ---
 
@@ -15,7 +13,7 @@ Milestone-based build sequence. Each milestone ends with a **green build** (`xco
 - 3-column `MacContentView`; `WindowGroup` app entry with env injection.
 - Project builds clean on macOS.
 
-## Milestone 1 — Editing MVP (v0.1)  ← **this pass**
+## Milestone 1 — Editing MVP (v0.1)  ✅ (done)
 Goal: **select a vault → open a note → edit with live Markdown → auto-save to disk → create/delete notes.**
 
 | # | Task | File(s) | Acceptance |
@@ -133,6 +131,34 @@ Deferred, with rationale:
 - **Heading scroll for `[[Note#heading]]`** — navigation opens the note at the top; scrolling to the heading hits the same TextKit 2 wall as the outline jump (Milestone 7).
 - **Note transclusion `![[Note]]`, callouts, comments** — need MarkdownEngine render hooks it doesn't expose (see `docs/unimplemented.md`).
 - Raw front matter still renders as text in the editor (no engine hook to hide it); the properties panel is an editable overlay above it.
+
+---
+
+## Milestone 10 — Editor unblocking via the MarkdownEngine fork  ✅ (done)
+All eight "engine wall" deferrals from Milestones 3–9 were resolved by forking
+`swift-markdown-engine` ([`ChristineTham/swift-markdown-engine@hellonotes-patches`](https://github.com/ChristineTham/swift-markdown-engine)) and
+upstreaming each fix as a PR: **scroll-to-heading** (outline, `[[Note#heading]]`, search),
+**inline native Mermaid**, **⌘F find & replace**, **tag autocomplete**, **callouts** (collapsible,
+iconed) + **`%%comments%%`** + **front-matter hiding**, and host-side **note transclusion**
+`![[Note]]`/`![[Note#heading]]`. Detail: [markdown-engine-strategy.md](markdown-engine-strategy.md).
+
+## Milestone 11 — Library, files & git hosting  ✅ (done)
+- **Multi-collection Library** (`State/Library` + `Collection`): several vaults open at once, a launcher with recents and saved library sets, and **Obsidian vault import** (`Core/ObsidianVault`).
+- **Note ops**: rename with vault-wide link rewrite, duplicate, new-note-in-folder, drag-and-drop moving, empty-folder creation.
+- **Attachments**: non-Markdown files in the tree + native **file viewer** (`UI/FileViewerView`, QuickLook/PDFKit); **smart paste** (HTML → Markdown); Vision-powered image alt-text.
+- **Git hosting**: HTTPS token credentials in the Keychain (`GitCredentials`), **clone** and **create-remote** flows (`GitHostAPI`, `CloneRepositoryView`, `NewRepositoryView`), in-app git identity (`GitSettingsView`).
+
+## Milestone 12 — AI: intelligence, assistant & providers  ✅ (done)
+- **Provider layer** (`LLM/`): a streaming `LLMProvider` protocol with five adapters — Apple Foundation Models (on-device), MLX (local), OpenAI-compatible (OpenAI/Mistral/Groq/OpenRouter/Ollama/LM Studio), Anthropic, Gemini. Keys in the Keychain; model catalog + settings UI.
+- **Ask Library**: retrieval-augmented chat over every open collection, with citations.
+- **Assistant**: an agentic loop (`AgentRunner`) with collection tools (search/read/edit **behind explicit approval** via `PermissionBroker`), web search/fetch, **skills** (instruction notes in the collection), and **deep research**; JSONL chat transcripts per collection.
+- **Note intelligence**: summarise / suggest tags / suggest links via on-device Apple Intelligence where available.
+
+## Milestone 13 — Exploration views, platform polish & production hardening  ✅ (done)
+- **Editor view modes** (Edit / native read-only Preview / Markdown source / Split) with an iOS WKWebView preview; **Marp slide decks** (`Core/MarpSlides`, `UI/SlidesView`).
+- **Graph** rebuilt as a directional link map (arrowed edges, click-to-trace focus colouring, whole-collection or around-a-note scope with link distance) and a new content-based **Mind Map** (headings → branches, bullets → leaves, `[[links]]` → jump-off chips), both zoomable/scrollable with collision-avoiding layouts (`Core/LayoutRelaxation`).
+- **Platform polish**: full menu bar (File/Note/Format/View incl. ⌘1–4 modes), windowed Graph/Mind Map/Assistant/Ask Library, appearance settings (theme/accent/text size, instant window repaint), HIG/usability passes, iPhone-compact navigation, launch **splash** with git-commit/build-date stamping.
+- **Production hardening** (see [production.md](production.md)): sandbox bookmark entitlement, Markdown document types, shared scheme, FIFO-serialized `GitService`, atomic chat persistence, provider timeouts, bounded web fetch, zero app-source warnings, and a truthful privacy story for the optional cloud AI.
 
 ---
 
