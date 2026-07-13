@@ -33,14 +33,9 @@ struct MacContentView: View {
     @State private var showLauncher = false
     @State private var showNewRepo = false
 
-    /// Multi-provider LLM assistant. Settings live at the app level so every
-    /// window shares them.
+    /// Shared LLM configuration (the Assistant and Ask Library windows own
+    /// their models; the editor's intelligence features read this directly).
     @Environment(LLMSettings.self) private var llmSettings
-    @State private var assistant: AssistantModel?
-    @State private var permissions = PermissionBroker()
-    @State private var skills = SkillStore()
-    @State private var showAssistant = false
-    @State private var showLLMSettings = false
 
     /// Opt-in background local auto-commit (never auto-pushes).
     @AppStorage("gitAutoCommit") private var autoCommit = false
@@ -57,9 +52,6 @@ struct MacContentView: View {
     @State private var searchText = ""
 
     @State private var showOpenQuickly = false
-    @State private var showGraph = false
-    @State private var showMindMap = false
-    @State private var showLibraryChat = false
 
     /// Rename-note prompt state (set via the context menu or the Note menu).
     @State private var renameTarget: Note?
@@ -163,22 +155,6 @@ struct MacContentView: View {
         )
     }
 
-    /// Nodes and resolved edges for the focused collection's link-graph view.
-    private var graphData: (nodes: [GraphNode], edges: [GraphEdge]) {
-        guard let c = focused else { return ([], []) }
-        let notes = c.notes
-        let indexByURL = Dictionary(uniqueKeysWithValues: notes.enumerated().map { ($1.fileURL, $0) })
-        var edges: [GraphEdge] = []
-        for (i, note) in notes.enumerated() {
-            for target in c.linkGraph.outgoingByURL[note.fileURL] ?? [] {
-                if let destURL = c.linkGraph.resolve(target), let j = indexByURL[destURL], j != i {
-                    edges.append(GraphEdge(from: i, to: j))
-                }
-            }
-        }
-        return (notes.map { GraphNode(url: $0.fileURL, label: $0.title) }, edges)
-    }
-
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -187,12 +163,10 @@ struct MacContentView: View {
         } detail: {
             editorColumn
         }
+        // A floor under the three-column layout, so the editor's status bar
+        // and note list never collapse into vertical text wrapping.
+        .frame(minWidth: 860, minHeight: 480)
         .task {
-            if assistant == nil {
-                let model = AssistantModel(settings: llmSettings)
-                model.registry = ToolRegistry(tools: CollectionTools.all())
-                assistant = model
-            }
             library.onExternalChange = { @MainActor in
                 Task { await tabs.reconcileAll() }
                 revalidateSelection()
@@ -203,7 +177,6 @@ struct MacContentView: View {
                 // First run with nothing to restore: offer the launcher.
                 if library.isEmpty { showLauncher = true }
             }
-            syncFocusedServices()
         }
         .onChange(of: selectedNoteID) { _, newID in
             if let note = library.allNotes.first(where: { $0.id == newID }) {
@@ -213,12 +186,19 @@ struct MacContentView: View {
         }
         .onChange(of: library.focusedID) { _, _ in
             selectedTag = nil
-            syncFocusedServices()
+        }
+        .onChange(of: library.pendingOpenNoteID) { _, id in
+            // Another window (graph, mind map, assistant, chat) asked us to
+            // show a note.
+            guard let id else { return }
+            selectedTag = nil
+            searchText = ""
+            selectedNoteID = id
+            library.pendingOpenNoteID = nil
         }
         .onChange(of: library.allNotes) { _, notes in
             tabs.prune(keeping: Set(notes.map(\.id)))
             revalidateSelection()
-            if let c = focused { skills.refresh(from: c.notes) }
         }
         .onChange(of: tabs.totalSavedRevision) { _, _ in
             if let c = editorCollection {
@@ -234,34 +214,6 @@ struct MacContentView: View {
         .sheet(isPresented: $showOpenQuickly) {
             if let c = focused {
                 OpenQuicklyView(search: c.search) { selectedNoteID = $0.id }
-            }
-        }
-        .sheet(isPresented: $showGraph) {
-            let data = graphData
-            GraphView(nodes: data.nodes, edges: data.edges) { url in
-                if let note = focused?.notes.first(where: { $0.fileURL == url }) {
-                    selectedTag = nil
-                    searchText = ""
-                    selectedNoteID = note.id
-                }
-            }
-        }
-        .sheet(isPresented: $showMindMap) {
-            if let note = selectedNote, let c = editorCollection {
-                MindMapView(rootURL: note.fileURL, notes: c.notes, linkGraph: c.linkGraph) { note in
-                    selectedTag = nil
-                    searchText = ""
-                    selectedNoteID = note.id
-                }
-            }
-        }
-        .sheet(isPresented: $showLibraryChat) {
-            LibraryChatView(intelligence: IntelligenceService(settings: llmSettings),
-                            notes: library.allNotes, searches: library.collections.map(\.search)) { note in
-                selectedTag = nil
-                searchText = ""
-                selectedNoteID = note.id
-                showLibraryChat = false
             }
         }
         .sheet(isPresented: $showGitSettings) {
@@ -295,17 +247,6 @@ struct MacContentView: View {
             NewRepositoryView(store: gitAccounts) { url in
                 Task { await library.open(url: url) }
             }
-        }
-        .sheet(isPresented: $showAssistant) {
-            if let assistant {
-                AssistantView(model: assistant) {
-                    showAssistant = false
-                    Task { try? await Task.sleep(for: .milliseconds(250)); showLLMSettings = true }
-                }
-            }
-        }
-        .sheet(isPresented: $showLLMSettings) {
-            LLMSettingsView(settings: llmSettings)
         }
         .alert("Rename Note",
                isPresented: Binding(get: { renameTarget != nil },
@@ -370,12 +311,19 @@ struct MacContentView: View {
             canOpenQuickly: !(focused?.notes.isEmpty ?? true),
             openQuickly: { showOpenQuickly = true },
             canGraph: !(focused?.notes.isEmpty ?? true),
-            graphView: { showGraph = true },
+            graphView: { openWindow(id: "graph") },
             canAsk: !library.allNotes.isEmpty,
-            askLibrary: { showLibraryChat = true },
-            assistant: { openAssistant() },
+            askLibrary: { openWindow(id: "askLibrary") },
+            assistant: { openWindow(id: "assistant") },
             canCloseTab: tabs.openNotes.count > 1 && tabs.editor(withID: selectedNoteID) != nil,
             closeTab: { if let id = selectedNoteID { closeTab(id) } },
+            format: selectedNote.map { note in
+                { action in
+                    NotificationCenter.default.post(
+                        name: .hnFormat(action.kind, documentId: note.fileURL.path),
+                        object: nil, userInfo: action.userInfo)
+                }
+            },
             note: selectedNote.map { note in
                 NoteMenuActions(
                     isBookmarked: library.collection(containing: note.fileURL)?.bookmarks.isBookmarked(note) ?? false,
@@ -430,16 +378,6 @@ struct MacContentView: View {
         }
     }
 
-    /// Point the assistant's tools and chat store at the focused collection.
-    private func syncFocusedServices() {
-        guard let assistant, let c = focused else { return }
-        assistant.toolContext = ToolContext(
-            collection: c, search: c.search, git: c.git, permissions: permissions,
-            settings: llmSettings, skills: skills)
-        assistant.sessionStore = ChatSessionStore(collectionURL: c.rootURL)
-        skills.refresh(from: c.notes)
-    }
-
     /// Drop the selection if the note (or attachment) it pointed at is gone.
     private func revalidateSelection() {
         let stillValid = selectedNoteID.map { id in
@@ -447,12 +385,6 @@ struct MacContentView: View {
                 || library.collections.contains { $0.attachments.contains { $0.url == id } }
         } ?? true
         if !stillValid { selectedNoteID = tabs.openNotes.last?.id }
-    }
-
-    private func openAssistant() {
-        if assistant == nil { assistant = AssistantModel(settings: llmSettings) }
-        syncFocusedServices()
-        DispatchQueue.main.async { showAssistant = true }
     }
 
     /// Browse iCloud Drive for Obsidian vaults. The open panel (Powerbox) grants
@@ -510,17 +442,17 @@ struct MacContentView: View {
                     Label("Today's Note", systemImage: "calendar")
                 }
 
-                Button { showGraph = true } label: {
+                Button { openWindow(id: "graph") } label: {
                     Label("Graph View", systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 .disabled(focused.notes.isEmpty)
 
-                Button { showLibraryChat = true } label: {
+                Button { openWindow(id: "askLibrary") } label: {
                     Label("Ask Library", systemImage: "sparkles.rectangle.stack")
                 }
                 .disabled(library.allNotes.isEmpty)
 
-                Button { openAssistant() } label: {
+                Button { openWindow(id: "assistant") } label: {
                     Label("Assistant", systemImage: "sparkles")
                 }
 
@@ -706,7 +638,9 @@ struct MacContentView: View {
                     onOpenWikiLink: openWikiLink,
                     onOpenNote: { selectedNoteID = $0.id },
                     onLinkMention: linkMention,
-                    onShowMindMap: { showMindMap = true }
+                    onShowMindMap: {
+                        if let url = selectedNote?.fileURL { openWindow(value: MindMapRef(url)) }
+                    }
                 )
             } else {
                 ContentUnavailableView(
@@ -742,11 +676,11 @@ struct MacContentView: View {
 
             statusBarButton("New note", "square.and.pencil") { newNote() }
             statusBarButton("Today's note", "calendar") { openTodaysNote() }
-            statusBarButton("Graph view", "point.3.connected.trianglepath.dotted") { showGraph = true }
+            statusBarButton("Graph view", "point.3.connected.trianglepath.dotted") { openWindow(id: "graph") }
                 .disabled(focused?.notes.isEmpty ?? true)
-            statusBarButton("Ask your library", "sparkles.rectangle.stack") { showLibraryChat = true }
+            statusBarButton("Ask your library", "sparkles.rectangle.stack") { openWindow(id: "askLibrary") }
                 .disabled(library.allNotes.isEmpty)
-            statusBarButton("Assistant", "sparkles") { openAssistant() }
+            statusBarButton("Assistant", "sparkles") { openWindow(id: "assistant") }
         }
         .font(.callout)
         .padding(.horizontal, 10)
@@ -869,7 +803,7 @@ struct MacContentView: View {
                 } label: {
                     Label("Open Quickly", systemImage: "magnifyingglass")
                 }
-                .help("Open Quickly (⌘O)")
+                .help("Open Quickly (⇧⌘O)")
                 .disabled(focused?.notes.isEmpty ?? true)
             }
         }

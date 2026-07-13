@@ -206,11 +206,14 @@ struct iOSContentView: View {
         }
         .foregroundStyle(.primary)
         .swipeActions(edge: .trailing) {
-            Button(role: .destructive) {
+            // Closing a collection loses no data, so no destructive red —
+            // gray, like Mail's non-destructive swipe actions.
+            Button {
                 library.close(collection)
             } label: {
                 Label("Close", systemImage: "xmark.circle")
             }
+            .tint(.gray)
         }
     }
 

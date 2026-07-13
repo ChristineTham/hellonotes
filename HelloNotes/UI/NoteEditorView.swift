@@ -404,18 +404,20 @@ struct NoteEditorView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Source + preview together. Lays them out side by side in a landscape
-    /// (wide) column and stacked in a portrait (tall) one.
+    /// Source + preview together, with a draggable divider. Side by side in a
+    /// landscape (wide) column and stacked in a portrait (tall) one.
     private var splitModeContent: some View {
         GeometryReader { geo in
-            let sideBySide = geo.size.width >= geo.size.height
-            let layout = sideBySide
-                ? AnyLayout(HStackLayout(spacing: 0))
-                : AnyLayout(VStackLayout(spacing: 0))
-            layout {
-                sourceEditor
-                Divider()
-                previewEngine
+            if geo.size.width >= geo.size.height {
+                HSplitView {
+                    sourceEditor.frame(minWidth: 180)
+                    previewEngine.frame(minWidth: 180)
+                }
+            } else {
+                VSplitView {
+                    sourceEditor.frame(minHeight: 120)
+                    previewEngine.frame(minHeight: 120)
+                }
             }
         }
     }
@@ -702,15 +704,18 @@ struct NoteEditorView: View {
     /// hidden, not just disabled.
     private var bottomBar: some View {
         HStack(spacing: 8) {
-            // Status (left)
+            // Status (left). Single-line and truncating, so a narrow window
+            // shortens the text instead of wrapping it vertically.
             Text("\(wordCount) word\(wordCount == 1 ? "" : "s")")
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
             Divider().frame(height: 11)
-            saveStatus.labelStyle(.titleAndIcon)
+            saveStatus.labelStyle(.titleAndIcon).lineLimit(1)
             if git.status.isRepository, !git.status.isClean {
                 Divider().frame(height: 11)
                 Label("\(git.status.changeCount) changed", systemImage: "pencil.and.list.clipboard")
                     .foregroundStyle(.orange)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 12)
@@ -831,6 +836,18 @@ struct NoteEditorView: View {
         config.services.bus.findResults = .hnEditorFindResults
         config.services.bus.replaceCurrent = .hnEditorReplaceCurrent
         config.services.bus.replaceAll = .hnEditorReplaceAll
+        // Format-menu commands, scoped per document so they reach only this
+        // editor (see `Notification.Name.hnFormat`).
+        let docId = editor.note?.fileURL.path ?? "default"
+        config.services.bus.applyBoldRequest = .hnFormat("bold", documentId: docId)
+        config.services.bus.applyItalicRequest = .hnFormat("italic", documentId: docId)
+        config.services.bus.applyStrikethroughRequest = .hnFormat("strikethrough", documentId: docId)
+        config.services.bus.applyHighlightRequest = .hnFormat("highlight", documentId: docId)
+        config.services.bus.applyInlineCodeRequest = .hnFormat("inlineCode", documentId: docId)
+        config.services.bus.applyBlockquoteRequest = .hnFormat("blockquote", documentId: docId)
+        config.services.bus.applyUnorderedListRequest = .hnFormat("unorderedList", documentId: docId)
+        config.services.bus.applyOrderedListRequest = .hnFormat("orderedList", documentId: docId)
+        config.services.bus.applyHeadingRequest = .hnFormat("heading", documentId: docId)
         return config
     }
 }

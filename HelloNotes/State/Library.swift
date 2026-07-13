@@ -44,6 +44,14 @@ final class Library {
     /// recents store.
     var onOpened: @MainActor (URL) -> Void = { _ in }
 
+    /// A note another window (graph, mind map, assistant, chat) asked the main
+    /// window to select. The main window observes this, selects the note, and
+    /// clears it.
+    var pendingOpenNoteID: Note.ID?
+
+    /// Ask the main window to select and show `noteID`.
+    func requestOpen(_ noteID: Note.ID) { pendingOpenNoteID = noteID }
+
     // MARK: - Focus
 
     func focus(_ collection: Collection) { focusedID = collection.id }

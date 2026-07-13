@@ -37,18 +37,19 @@ struct iOSSettingsView: View {
                     .pickerStyle(.segmented)
 
                     Toggle("Increase contrast", isOn: $settings.increaseContrast)
+                    Text("Deepens the accent color and makes colored text easier to read.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
 
                 Section("Accent Color") {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 36))], spacing: 10) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 44))], spacing: 6) {
                         ForEach(swatchAccents) { accent in
                             swatch(accent)
                         }
                     }
-                    .padding(.vertical, 4)
                 }
 
-                Section("Text Size") {
+                Section {
                     HStack(spacing: 12) {
                         Text("A").font(.footnote).foregroundStyle(.secondary)
                         Slider(value: $settings.textScale,
@@ -57,6 +58,10 @@ struct iOSSettingsView: View {
                     }
                     Button("Reset to Default") { settings.textScale = 1.0 }
                         .disabled(abs(settings.textScale - 1.0) < 0.001)
+                } header: {
+                    Text("Text Size")
+                } footer: {
+                    Text("Scales the note editor and preview. Everything else follows the system text size in Settings > Display & Brightness.")
                 }
 
                 Section("Attachments") {
@@ -108,6 +113,10 @@ struct iOSSettingsView: View {
                             .foregroundStyle(.white.opacity(0.9))
                     }
                 }
+                // The visual stays 30 pt; the tappable area meets the 44 pt
+                // minimum hit target.
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(accent.label) accent")

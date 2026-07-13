@@ -78,7 +78,12 @@ final class AppearanceSettings {
 
     // MARK: Stored settings
 
-    var mode: Mode { didSet { UserDefaults.standard.set(mode.rawValue, forKey: "appearanceMode") } }
+    var mode: Mode {
+        didSet {
+            UserDefaults.standard.set(mode.rawValue, forKey: "appearanceMode")
+            applyWindowAppearance()
+        }
+    }
     var accent: Accent { didSet { UserDefaults.standard.set(accent.rawValue, forKey: "accentChoice") } }
     var customAccent: Color { didSet { UserDefaults.standard.set(Self.hex(customAccent), forKey: "customAccentHex") } }
     /// 0.8 … 1.5, with 1.0 the default (middle of the slider).
@@ -97,6 +102,28 @@ final class AppearanceSettings {
         let stored = defaults.double(forKey: "textScale")
         textScale = stored == 0 ? 1.0 : min(max(stored, Self.minScale), Self.maxScale)
         increaseContrast = defaults.bool(forKey: "increaseContrast")
+        applyWindowAppearance()
+    }
+
+    /// Sync AppKit's app-wide appearance with the chosen theme, so *every*
+    /// window (including unfocused ones) repaints immediately on switch —
+    /// `preferredColorScheme` alone leaves background windows stale until they
+    /// next gain focus.
+    private func applyWindowAppearance() {
+        #if os(macOS)
+        let appearance: NSAppearance? = switch mode {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+        NSApp?.appearance = appearance
+        // SwiftUI manages each window's appearance from preferredColorScheme,
+        // but only refreshes it when the window becomes key — set every window
+        // directly so background windows repaint immediately too.
+        for window in NSApp?.windows ?? [] {
+            window.appearance = appearance
+        }
+        #endif
     }
 
     /// Text-contrast target: AAA when "increase contrast" is on, else AA.
@@ -273,10 +300,21 @@ final class AppearanceSettings {
 private struct ThemedRoot: ViewModifier {
     let settings: AppearanceSettings
     func body(content: Content) -> some View {
+        #if os(macOS)
+        // The Mac has no user-facing Dynamic Type, so the app's Text Size
+        // slider drives the chrome directly.
         content
             .tint(settings.accentColor)
             .preferredColorScheme(settings.colorScheme)
             .dynamicTypeSize(settings.dynamicTypeSize)
+        #else
+        // On iOS the system Text Size (Dynamic Type) must win — forcing the
+        // app's own size would override the user's accessibility setting. The
+        // in-app slider still scales the editor and preview fonts.
+        content
+            .tint(settings.accentColor)
+            .preferredColorScheme(settings.colorScheme)
+        #endif
     }
 }
 

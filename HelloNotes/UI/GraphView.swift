@@ -27,10 +27,19 @@ struct GraphView: View {
     let nodes: [GraphNode]
     let edges: [GraphEdge]
     let onSelect: (URL) -> Void
+    /// Node colour — pass the app's resolved accent (`Color.accentColor` only
+    /// reflects the asset-catalog accent, not the app's theming system).
+    var accent: Color = .accentColor
+    /// When hosted in its own window there is no sheet to dismiss: hide the
+    /// Done button and keep the graph open after a node is clicked.
+    var isWindowed = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var positions: [CGPoint] = []
     @State private var layoutSize: CGSize = .zero
+
+    /// Keeps node labels inside the canvas (labels draw centered under nodes).
+    private static let labelInset = CGSize(width: 56, height: 30)
 
     private var degrees: [Int] {
         var d = Array(repeating: 0, count: nodes.count)
@@ -50,8 +59,10 @@ struct GraphView: View {
                 Text("\(nodes.count) notes · \(edges.count) links")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.cancelAction)
+                if !isWindowed {
+                    Button("Done") { dismiss() }
+                        .keyboardShortcut(.cancelAction)
+                }
             }
             .padding(12)
             Divider()
@@ -76,7 +87,7 @@ struct GraphView: View {
                 for (i, point) in positions.enumerated() {
                     let radius = 5 + min(CGFloat(deg[i]) * 1.5, 12)
                     let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
-                    context.fill(Circle().path(in: rect), with: .color(.accentColor))
+                    context.fill(Circle().path(in: rect), with: .color(accent))
                     context.draw(
                         Text(nodes[i].label).font(.caption2).foregroundStyle(.primary),
                         at: CGPoint(x: point.x, y: point.y + radius + 8)
@@ -89,13 +100,16 @@ struct GraphView: View {
                 SpatialTapGesture().onEnded { value in
                     if let i = nearestNode(to: value.location) {
                         onSelect(nodes[i].url)
-                        dismiss()
+                        if !isWindowed { dismiss() }
                     }
                 }
             )
-            .onAppear { layout(in: geo.size) }
-            .onChange(of: geo.size) { _, newSize in layout(in: newSize) }
-            .onChange(of: nodes) { _, _ in layout(in: geo.size) }
+            // `.task(id:)` runs on first appearance *and* whenever the size or
+            // node set changes — unlike onAppear, it also covers a window that
+            // was instantiated hidden (size .zero) and materialised later.
+            .task(id: "\(geo.size.width)x\(geo.size.height)/\(nodes.count)") {
+                layout(in: geo.size)
+            }
         }
     }
 
@@ -104,11 +118,16 @@ struct GraphView: View {
         // Recompute only when the node set or size meaningfully changed.
         guard positions.count != nodes.count || size != layoutSize else { return }
         layoutSize = size
+        // Lay out in a rect inset by the label margin, then shift back, so
+        // node labels never clip at the canvas edges.
+        let inset = Self.labelInset
+        let inner = CGSize(width: max(size.width - inset.width * 2, 100),
+                           height: max(size.height - inset.height * 2, 100))
         positions = GraphLayout.positions(
             count: nodes.count,
             edges: edges.map { ($0.from, $0.to) },
-            size: size
-        )
+            size: inner
+        ).map { CGPoint(x: $0.x + inset.width, y: $0.y + inset.height) }
     }
 
     private func nearestNode(to point: CGPoint) -> Int? {

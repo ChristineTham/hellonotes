@@ -17,7 +17,7 @@ struct HelloNotesApp: App {
     @State private var appearance = AppearanceSettings()
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: "main") {
             #if os(macOS)
             MacContentView()
                 .environment(library)
@@ -47,6 +47,44 @@ struct HelloNotesApp: App {
                     .themedRoot(appearance)
             }
         }
+
+        // Exploration / reference surfaces live in windows, not sheets, so
+        // they can stay open beside the notes they describe.
+        Window("Graph", id: "graph") {
+            GraphWindowView()
+                .environment(library)
+                .environment(appearance)
+                .themedRoot(appearance)
+        }
+        .defaultSize(width: 760, height: 560)
+
+        Window("Ask Library", id: "askLibrary") {
+            LibraryChatWindowView()
+                .environment(library)
+                .environment(llmSettings)
+                .environment(appearance)
+                .themedRoot(appearance)
+        }
+        .defaultSize(width: 560, height: 640)
+
+        Window("Assistant", id: "assistant") {
+            AssistantWindowView()
+                .environment(library)
+                .environment(llmSettings)
+                .environment(appearance)
+                .themedRoot(appearance)
+        }
+        .defaultSize(width: 560, height: 680)
+
+        WindowGroup(for: MindMapRef.self) { $ref in
+            if let ref {
+                MindMapWindowView(rootURL: ref.url)
+                    .environment(library)
+                    .environment(appearance)
+                    .themedRoot(appearance)
+            }
+        }
+        .defaultSize(width: 720, height: 540)
 
         // Preferences window (⌘,): General, Appearance, and AI tabs.
         Settings {

@@ -29,7 +29,7 @@ struct AppearanceSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
 
                 Toggle("Increase contrast", isOn: $settings.increaseContrast)
-                Text("Deepens the accent and holds text to the stricter WCAG AAA (7:1) ratio.")
+                Text("Deepens the accent color and makes colored text easier to read.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
