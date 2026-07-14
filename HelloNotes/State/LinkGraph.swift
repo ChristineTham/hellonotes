@@ -27,15 +27,22 @@ final class LinkGraph {
 
     /// Rebuild the entire graph from the current notes. Reads every file off the
     /// main actor. (A future optimisation is incremental per-note updates.)
-    func rebuild(from notes: [Note]) async {
+    func rebuild(from notes: [Note], texts sharedTexts: [URL: String]? = nil) async {
         let items = notes.map { ($0.fileURL, $0.title) }
         let result = await Task.detached(priority: .utility) { () -> (back: [URL: Set<URL>], out: [URL: [String]], resolve: [String: URL]) in
-            // Pass 1: read files, register each note's title + aliases.
+            // Pass 1: read files (or use the shared texts), register title + aliases.
             var resolve: [String: URL] = [:]
-            var texts: [(URL, String)] = []
+            var loaded: [(URL, String)] = []
             for (url, title) in items {
-                guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-                texts.append((url, text))
+                let text: String
+                if let sharedTexts {
+                    guard let shared = sharedTexts[url] else { continue }
+                    text = shared
+                } else {
+                    guard let read = try? String(contentsOf: url, encoding: .utf8) else { continue }
+                    text = read
+                }
+                loaded.append((url, text))
                 resolve[title.lowercased()] = url
                 for alias in MarkdownParsing.aliases(in: text) {
                     resolve[alias.lowercased()] = url
@@ -44,7 +51,7 @@ final class LinkGraph {
             // Pass 2: index outgoing targets and resolved backlinks.
             var back: [URL: Set<URL>] = [:]
             var out: [URL: [String]] = [:]
-            for (url, text) in texts {
+            for (url, text) in loaded {
                 let targets = MarkdownParsing.wikiLinkTargets(in: text)
                 out[url] = targets
                 for target in targets where !target.isEmpty {

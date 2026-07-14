@@ -271,7 +271,7 @@ struct DeleteNoteTool: AgentTool {
         )
         guard ok else { throw ToolError.declined }
 
-        context.collection.deleteNote(note)
+        await context.collection.deleteNote(note)
         await context.refreshAfterMutation()
         await context.commit("assistant: delete \(rel)")
         return "Moved “\(rel)” to the Trash."

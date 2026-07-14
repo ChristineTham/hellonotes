@@ -176,26 +176,26 @@ struct HelloNotesTests {
         #expect(!titles.contains("Notes"))
     }
 
-    @Test
-    func createAndDeleteNote() throws {
+    @Test @MainActor
+    func createAndDeleteNote() async throws {
         let vault = try copiedSampleVault()
         defer { try? FileManager.default.removeItem(at: vault) }
 
         let indexer = Collection(rootURL: vault)
         indexer.scan()
 
-        let created = try #require(indexer.createNote(title: "Fresh"))
+        let created = try #require(await indexer.createNote(title: "Fresh"))
         #expect(created.title == "Fresh")
         #expect(FileManager.default.fileExists(atPath: created.fileURL.path))
         #expect(indexer.notes.contains(created))
 
-        indexer.deleteNote(created)
+        await indexer.deleteNote(created)
         #expect(FileManager.default.fileExists(atPath: created.fileURL.path) == false)
         #expect(indexer.notes.contains(created) == false)
     }
 
-    @Test
-    func createNoteDisambiguatesDuplicateNames() throws {
+    @Test @MainActor
+    func createNoteDisambiguatesDuplicateNames() async throws {
         let vault = try copiedSampleVault()
         defer { try? FileManager.default.removeItem(at: vault) }
 
@@ -203,8 +203,8 @@ struct HelloNotesTests {
         indexer.scan()
 
         // "Welcome" already exists in the sample vault, so a new one is disambiguated.
-        let first = try #require(indexer.createNote(title: "Welcome"))
-        let second = try #require(indexer.createNote(title: "Welcome"))
+        let first = try #require(await indexer.createNote(title: "Welcome"))
+        let second = try #require(await indexer.createNote(title: "Welcome"))
 
         #expect(first.fileURL != second.fileURL)
         #expect(first.fileURL.lastPathComponent == "Welcome 2.md")

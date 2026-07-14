@@ -50,15 +50,27 @@ final class CollectionSearchModel {
     private var cachedTagTree: [TagNode] = []
     private var cachedLinkTargets: [String] = []
     private var cachedItems: [QuickOpenItem] = []
+    /// Entries keyed by URL, so per-note lookups (text/aliases on the selection
+    /// and save paths) are O(1) instead of a linear scan of every entry.
+    private var entryByURL: [URL: Entry] = [:]
 
-    /// Reload the content cache from the current notes (reads files off-main).
-    func refresh(from notes: [Note]) async {
+    /// Reload the content cache from the current notes. Reads files off-main,
+    /// or reuses `sharedTexts` when the caller already read them (so the link
+    /// graph and search index don't each read the whole collection).
+    func refresh(from notes: [Note], texts sharedTexts: [URL: String]? = nil) async {
         let urls = notes.map(\.fileURL)
         let noteByURL = Dictionary(notes.map { ($0.fileURL, $0) }, uniquingKeysWith: { first, _ in first })
 
         let loaded = await Task.detached(priority: .utility) { () -> [(URL, String, [DocumentHeading], [String], [String])] in
             urls.compactMap { url in
-                guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                let text: String
+                if let sharedTexts {
+                    guard let shared = sharedTexts[url] else { return nil }
+                    text = shared
+                } else {
+                    guard let read = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                    text = read
+                }
                 return (url, text, MarkdownParsing.headings(in: text), MarkdownParsing.tags(in: text), MarkdownParsing.aliases(in: text))
             }
         }.value
@@ -71,6 +83,7 @@ final class CollectionSearchModel {
 
     /// Recompute the cached tag / link-target aggregates from `entries`.
     private func rebuildAggregates() {
+        entryByURL = Dictionary(entries.map { ($0.note.fileURL, $0) }, uniquingKeysWith: { first, _ in first })
         cachedTags = Set(entries.flatMap(\.tags))
             .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
         cachedTagTree = TagTree.build(from: cachedTags)
@@ -119,12 +132,12 @@ final class CollectionSearchModel {
 
     /// The cached text of a note, if indexed (used to derive its aliases, etc.).
     func text(of note: Note) -> String? {
-        entries.first { $0.note.fileURL == note.fileURL }?.text
+        entryByURL[note.fileURL]?.text
     }
 
     /// The cached aliases of the note at `url` (before any pending save).
     func aliases(of url: URL) -> [String] {
-        entries.first { $0.note.fileURL == url }?.aliases ?? []
+        entryByURL[url]?.aliases ?? []
     }
 
     /// A `Sendable` snapshot of (note, text) for an off-main mention scan.

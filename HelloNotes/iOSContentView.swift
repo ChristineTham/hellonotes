@@ -169,9 +169,8 @@ struct iOSContentView: View {
                 Menu {
                     if !library.isEmpty {
                         Button {
-                            if let note = focused?.createNote() {
-                                selectedNoteID = note.id
-                            }
+                            guard let c = focused else { return }
+                            Task { if let note = await c.createNote() { selectedNoteID = note.id } }
                         } label: {
                             Label("New Note", systemImage: "square.and.pencil")
                         }

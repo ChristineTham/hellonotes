@@ -198,9 +198,21 @@ final class Collection: Identifiable {
     func refreshDerived() {
         wikiResolver.update(titles: notes.map(\.title))
         embedProvider.update(notes: notes)
+        let noteList = notes
         Task {
-            await linkGraph.rebuild(from: notes)
-            await search.refresh(from: notes)
+            // Read every note once, off-main, and feed both the link graph and
+            // the search index from the shared texts — they used to each read
+            // the whole collection independently (2× the disk I/O).
+            let urls = noteList.map(\.fileURL)
+            let texts = await Task.detached(priority: .utility) { () -> [URL: String] in
+                var map: [URL: String] = [:]
+                for url in urls where map[url] == nil {
+                    if let text = try? String(contentsOf: url, encoding: .utf8) { map[url] = text }
+                }
+                return map
+            }.value
+            await linkGraph.rebuild(from: noteList, texts: texts)
+            await search.refresh(from: noteList, texts: texts)
             wikiResolver.update(titles: Array(linkGraph.resolution.keys))
             derivedRevision &+= 1
         }
@@ -291,7 +303,7 @@ final class Collection: Identifiable {
     /// from `title`, disambiguated if it already exists. `directory` defaults to
     /// the collection root; pass a subfolder URL to create the note there.
     @discardableResult
-    func createNote(title: String = "Untitled", in directory: URL? = nil) -> Note? {
+    func createNote(title: String = "Untitled", in directory: URL? = nil) async -> Note? {
         let fileManager = FileManager.default
         let base = title.isEmpty ? "Untitled" : title
         let folder = directory ?? rootURL
@@ -308,7 +320,7 @@ final class Collection: Identifiable {
             return nil
         }
 
-        scan()
+        await scanOffMain()
         refreshDerived()
         return notes.first { $0.fileURL.standardizedFileURL == candidate.standardizedFileURL }
     }
@@ -318,7 +330,7 @@ final class Collection: Identifiable {
     /// so renaming never silently breaks links. Returns the renamed note, or
     /// `nil` if the name is empty/unchanged or the destination already exists.
     @discardableResult
-    func renameNote(_ note: Note, to newTitle: String) -> Note? {
+    func renameNote(_ note: Note, to newTitle: String) async -> Note? {
         let title = newTitle
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
@@ -334,8 +346,8 @@ final class Collection: Identifiable {
             return nil
         }
 
-        rewriteWikiLinks(from: note.title, to: title, renamed: note.fileURL, movedTo: destination)
-        scan()
+        await rewriteWikiLinks(from: note.title, to: title, renamed: note.fileURL, movedTo: destination)
+        await scanOffMain()
         refreshDerived()
         return notes.first { $0.fileURL.standardizedFileURL == destination.standardizedFileURL }
     }
@@ -343,7 +355,7 @@ final class Collection: Identifiable {
     /// Duplicate a note beside the original ("Title copy.md", disambiguated)
     /// and return the copy.
     @discardableResult
-    func duplicateNote(_ note: Note) -> Note? {
+    func duplicateNote(_ note: Note) async -> Note? {
         let folder = note.fileURL.deletingLastPathComponent()
         let base = "\(note.title) copy"
         var candidate = folder.appendingPathComponent("\(base).md")
@@ -357,7 +369,7 @@ final class Collection: Identifiable {
         } catch {
             return nil
         }
-        scan()
+        await scanOffMain()
         refreshDerived()
         return notes.first { $0.fileURL.standardizedFileURL == candidate.standardizedFileURL }
     }
@@ -367,31 +379,33 @@ final class Collection: Identifiable {
     /// renamed note itself, whose file has already moved to `movedTo`.
     /// Case-insensitive and whitespace-tolerant; aliases and headings survive.
     private func rewriteWikiLinks(from oldTitle: String, to newTitle: String,
-                                  renamed oldURL: URL, movedTo newURL: URL) {
-        let escaped = NSRegularExpression.escapedPattern(for: oldTitle)
-        guard let regex = try? NSRegularExpression(
-            pattern: #"(\[\[)\s*"# + escaped + #"\s*(?=[#|\]])"#,
-            options: [.caseInsensitive]
-        ) else { return }
-
-        let template = "$1" + NSRegularExpression.escapedTemplate(for: newTitle)
-        for other in notes {
-            // `notes` is pre-rescan, so the renamed note still lists its old URL.
-            let url = other.fileURL == oldURL ? newURL : other.fileURL
-            guard let text = try? String(contentsOf: url, encoding: .utf8),
-                  text.contains("[[") else { continue }
-            let range = NSRange(text.startIndex..., in: text)
-            guard regex.firstMatch(in: text, options: [], range: range) != nil else { continue }
-            let updated = regex.stringByReplacingMatches(in: text, options: [], range: range,
-                                                         withTemplate: template)
-            try? Data(updated.utf8).write(to: url, options: .atomic)
-        }
+                                  renamed oldURL: URL, movedTo newURL: URL) async {
+        // `notes` is pre-rescan, so the renamed note still lists its old URL.
+        let urls = notes.map { $0.fileURL == oldURL ? newURL : $0.fileURL }
+        // Read + rewrite every note off the main actor — it's O(N) file I/O.
+        await Task.detached(priority: .userInitiated) {
+            let escaped = NSRegularExpression.escapedPattern(for: oldTitle)
+            guard let regex = try? NSRegularExpression(
+                pattern: #"(\[\[)\s*"# + escaped + #"\s*(?=[#|\]])"#,
+                options: [.caseInsensitive]
+            ) else { return }
+            let template = "$1" + NSRegularExpression.escapedTemplate(for: newTitle)
+            for url in urls {
+                guard let text = try? String(contentsOf: url, encoding: .utf8),
+                      text.contains("[[") else { continue }
+                let range = NSRange(text.startIndex..., in: text)
+                guard regex.firstMatch(in: text, options: [], range: range) != nil else { continue }
+                let updated = regex.stringByReplacingMatches(in: text, options: [], range: range,
+                                                             withTemplate: template)
+                try? Data(updated.utf8).write(to: url, options: .atomic)
+            }
+        }.value
     }
 
     /// Return the note at `relativePath`, creating the file (and any intermediate
     /// folders) with `content` if it doesn't exist yet. Used for daily notes.
     @discardableResult
-    func note(atRelativePath relativePath: String, creatingWith content: @autoclosure () -> String) -> Note? {
+    func note(atRelativePath relativePath: String, creatingWith content: @autoclosure () -> String) async -> Note? {
         let url = rootURL.appendingPathComponent(relativePath)
         let fileManager = FileManager.default
 
@@ -402,23 +416,23 @@ final class Collection: Identifiable {
             } catch {
                 return nil
             }
-            scan()
+            await scanOffMain()
             refreshDerived()
         }
         return notes.first { $0.fileURL.standardizedFileURL == url.standardizedFileURL }
     }
 
     /// Move a note to the Trash (never a hard delete) and re-index.
-    func deleteNote(_ note: Note) {
+    func deleteNote(_ note: Note) async {
         try? FileManager.default.trashItem(at: note.fileURL, resultingItemURL: nil)
-        scan()
+        await scanOffMain()
         refreshDerived()
     }
 
     /// Create an empty folder inside `parent` (defaults to the root), with the
     /// name disambiguated if it already exists. Returns the new folder's URL.
     @discardableResult
-    func createFolder(named name: String = "New Folder", in parent: URL? = nil) -> URL? {
+    func createFolder(named name: String = "New Folder", in parent: URL? = nil) async -> URL? {
         let base = name
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
@@ -435,22 +449,22 @@ final class Collection: Identifiable {
         } catch {
             return nil
         }
-        scan()
+        await scanOffMain()
         refreshDerived()
         return candidate
     }
 
     /// Move a folder (and its contents) to the Trash and re-index.
-    func deleteFolder(at url: URL) {
+    func deleteFolder(at url: URL) async {
         try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
-        scan()
+        await scanOffMain()
         refreshDerived()
     }
 
     /// Move a note or attachment file into `folder` (which must be inside the
     /// collection). Returns the item's new URL, or `nil` when the move fails or
     /// a same-named item already exists there.
-    func moveItem(at itemURL: URL, into folder: URL) -> URL? {
+    func moveItem(at itemURL: URL, into folder: URL) async -> URL? {
         let destination = folder.appendingPathComponent(itemURL.lastPathComponent)
         guard destination.standardizedFileURL != itemURL.standardizedFileURL,
               !FileManager.default.fileExists(atPath: destination.path) else { return nil }
@@ -459,7 +473,7 @@ final class Collection: Identifiable {
         } catch {
             return nil
         }
-        scan()
+        await scanOffMain()
         refreshDerived()
         return destination
     }

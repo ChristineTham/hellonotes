@@ -34,14 +34,23 @@ struct GraphWindowView: View {
     @State private var focusedURL: URL?
     @State private var depth = 2
 
+    /// Cached graph data, recomputed only when scope/focus/depth/index change
+    /// (see `graphKey`) rather than in the window body — the degree sort is
+    /// O(N log N) over the whole collection.
+    @State private var data: (nodes: [GraphNode], edges: [GraphEdge], dropped: Int) = ([], [], 0)
+
     /// A force-directed layout of every note is O(N²); past this many nodes the
     /// whole-collection view keeps only the most-connected notes (and says so),
     /// so the graph stays legible and fast instead of an unreadable hairball.
     private static let maxNodes = 250
 
+    private var graphKey: String {
+        "\(scope)|\(focusedURL?.path ?? "")|\(depth)|\(library.focused?.id ?? "")|\(library.focused?.derivedRevision ?? 0)"
+    }
+
     /// Nodes and resolved edges for the current scope, plus how many notes were
     /// dropped by the `maxNodes` cap (0 when nothing was dropped).
-    private var graphData: (nodes: [GraphNode], edges: [GraphEdge], dropped: Int) {
+    private func computeGraphData() -> (nodes: [GraphNode], edges: [GraphEdge], dropped: Int) {
         guard let c = library.focused else { return ([], [], 0) }
 
         var notes = c.notes
@@ -100,7 +109,6 @@ struct GraphWindowView: View {
     }
 
     var body: some View {
-        let data = graphData
         Group {
             if data.nodes.isEmpty {
                 ContentUnavailableView("No Notes to Graph", systemImage: "point.3.connected.trianglepath.dotted",
@@ -150,6 +158,7 @@ struct GraphWindowView: View {
         }
         .navigationTitle(library.focused.map { "Graph — \($0.name)" } ?? "Graph")
         .frame(minWidth: 480, minHeight: 360)
+        .task(id: graphKey) { data = computeGraphData() }
     }
 }
 

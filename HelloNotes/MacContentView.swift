@@ -69,6 +69,9 @@ struct MacContentView: View {
     /// References panel data, computed off-main and keyed on `referencesKey`.
     @State private var references = ReferencesData()
 
+    /// Debounces the per-save git status refresh.
+    @State private var gitStatusTask: Task<Void, Never>?
+
     @State private var showOpenQuickly = false
 
     /// Rename-note prompt state (set via the context menu or the Note menu).
@@ -274,9 +277,15 @@ struct MacContentView: View {
         // changes — never inline in the body (would scan all notes on selection).
         .task(id: referencesKey) { await computeReferences() }
         .onChange(of: tabs.totalSavedRevision) { _, _ in
-            if let c = editorCollection {
-                Task { await c.git.refreshStatus() }
-                if autoCommit { c.git.scheduleAutoCommit(message: autoCommitMessage) }
+            guard let c = editorCollection else { return }
+            if autoCommit { c.git.scheduleAutoCommit(message: autoCommitMessage) }
+            // Debounce the status refresh — it fires on every autosave, so a
+            // burst of edits shouldn't spawn a git status walk per keystroke.
+            gitStatusTask?.cancel()
+            gitStatusTask = Task {
+                try? await Task.sleep(for: .milliseconds(800))
+                guard !Task.isCancelled else { return }
+                await c.git.refreshStatus()
             }
         }
         .onChange(of: scenePhase) { _, newPhase in
@@ -335,10 +344,11 @@ struct MacContentView: View {
                                     set: { if !$0 { newFolderCollection = nil } })) {
             TextField("Name", text: $newFolderName, prompt: Text("New Folder"))
             Button("Create") {
-                newFolderCollection?.createFolder(
-                    named: newFolderName.isEmpty ? "New Folder" : newFolderName,
-                    in: newFolderParent)
+                let collection = newFolderCollection
+                let name = newFolderName.isEmpty ? "New Folder" : newFolderName
+                let parent = newFolderParent
                 newFolderCollection = nil
+                Task { await collection?.createFolder(named: name, in: parent) }
             }
             Button("Cancel", role: .cancel) { newFolderCollection = nil }
         }
@@ -366,7 +376,7 @@ struct MacContentView: View {
         let wasSelected = selectedNoteID == source
         Task {
             await tabs.flushAll()
-            if let destination = c.moveItem(at: source, into: folder), wasSelected {
+            if let destination = await c.moveItem(at: source, into: folder), wasSelected {
                 selectedNoteID = destination
             }
         }
@@ -402,8 +412,9 @@ struct MacContentView: View {
                     isBookmarked: library.collection(containing: note.fileURL)?.bookmarks.isBookmarked(note) ?? false,
                     rename: { beginRename(note) },
                     duplicate: {
-                        if let copy = library.collection(containing: note.fileURL)?.duplicateNote(note) {
-                            selectedNoteID = copy.id
+                        let c = library.collection(containing: note.fileURL)
+                        Task {
+                            if let copy = await c?.duplicateNote(note) { selectedNoteID = copy.id }
                         }
                     },
                     toggleBookmark: { library.collection(containing: note.fileURL)?.bookmarks.toggle(note) },
@@ -445,7 +456,7 @@ struct MacContentView: View {
         renameTarget = nil
         Task {
             await tabs.flushAll()
-            if let renamed = c.renameNote(note, to: title) {
+            if let renamed = await c.renameNote(note, to: title) {
                 selectedNoteID = renamed.id
             }
         }
@@ -808,18 +819,19 @@ struct MacContentView: View {
             onFocusCollection: { library.focus($0) },
             onRename: { beginRename($0) },
             onDuplicate: { note in
-                if let copy = library.collection(containing: note.fileURL)?.duplicateNote(note) {
-                    selectedNoteID = copy.id
-                }
+                let c = library.collection(containing: note.fileURL)
+                Task { if let copy = await c?.duplicateNote(note) { selectedNoteID = copy.id } }
             },
             onNewNote: { collection, folderID in
                 // A folder id is the folder's absolute path (collection id + relative path).
                 if let folderID, let c = library.collections.first(where: { folderID.hasPrefix($0.id) }) {
-                    if let note = c.createNote(in: URL(fileURLWithPath: folderID, isDirectory: true)) {
-                        selectedNoteID = note.id
+                    Task {
+                        if let note = await c.createNote(in: URL(fileURLWithPath: folderID, isDirectory: true)) {
+                            selectedNoteID = note.id
+                        }
                     }
-                } else if let note = (collection ?? focused)?.createNote() {
-                    selectedNoteID = note.id
+                } else if let c = collection ?? focused {
+                    Task { if let note = await c.createNote() { selectedNoteID = note.id } }
                 }
             },
             onNewFolder: { collection, folderID in
@@ -834,7 +846,7 @@ struct MacContentView: View {
             },
             onDeleteFolder: { folderID in
                 if let c = library.collections.first(where: { folderID.hasPrefix($0.id) }) {
-                    c.deleteFolder(at: URL(fileURLWithPath: folderID, isDirectory: true))
+                    Task { await c.deleteFolder(at: URL(fileURLWithPath: folderID, isDirectory: true)) }
                 }
             },
             onMoveItem: { source, folder in moveItem(at: source, into: folder) }
@@ -970,14 +982,14 @@ struct MacContentView: View {
               let text = try? String(contentsOf: note.fileURL, encoding: .utf8),
               let updated = MentionScanner.linkingFirstMention(of: target.title, in: text) else { return }
         try? Data(updated.utf8).write(to: note.fileURL, options: .atomic)
-        c.scan()
-        c.refreshDerived()
+        // The note set is unchanged (only one note's content), so no re-scan:
+        // patch the index incrementally and suppress the watcher for our write.
+        c.noteDidSave(note.fileURL, text: updated)
     }
 
     private func newNote() {
-        if let note = focused?.createNote() {
-            selectedNoteID = note.id
-        }
+        guard let c = focused else { return }
+        Task { if let note = await c.createNote() { selectedNoteID = note.id } }
     }
 
     // MARK: - Daily notes & templates
@@ -986,10 +998,13 @@ struct MacContentView: View {
     private func openTodaysNote() {
         let name = TemplateExpander.dailyNoteName(for: .now, format: dailyDateFormat)
         let rel = dailyNoteFolder.isEmpty ? "\(name).md" : "\(dailyNoteFolder)/\(name).md"
-        if let note = focused?.note(atRelativePath: rel, creatingWith: "# \(name)\n\n") {
-            selectedTag = nil
-            searchText = ""
-            selectedNoteID = note.id
+        guard let c = focused else { return }
+        Task {
+            if let note = await c.note(atRelativePath: rel, creatingWith: "# \(name)\n\n") {
+                selectedTag = nil
+                searchText = ""
+                selectedNoteID = note.id
+            }
         }
     }
 
@@ -1011,11 +1026,8 @@ struct MacContentView: View {
     }
 
     private func delete(_ note: Note, in collection: Collection) {
-        let wasSelected = selectedNoteID == note.id
-        collection.deleteNote(note)
-        if wasSelected {
-            selectedNoteID = nil
-        }
+        if selectedNoteID == note.id { selectedNoteID = nil }
+        Task { await collection.deleteNote(note) }
     }
 
     /// Handle a clicked link within the selection's collection. External URLs
@@ -1043,24 +1055,24 @@ struct MacContentView: View {
             heading = nil
         }
 
-        let destination: Note?
-        if base.isEmpty {
-            destination = selectedNote
-        } else if let url = c.linkGraph.resolve(base),
-                  let note = c.notes.first(where: { $0.fileURL == url }) {
-            destination = note
-        } else if let match = c.notes.first(where: { $0.title.localizedCaseInsensitiveCompare(base) == .orderedSame }) {
-            destination = match
-        } else {
-            destination = c.createNote(title: base)
-        }
+        Task {
+            let destination: Note?
+            if base.isEmpty {
+                destination = selectedNote
+            } else if let url = c.linkGraph.resolve(base),
+                      let note = c.notes.first(where: { $0.fileURL == url }) {
+                destination = note
+            } else if let match = c.notes.first(where: { $0.title.localizedCaseInsensitiveCompare(base) == .orderedSame }) {
+                destination = match
+            } else {
+                destination = await c.createNote(title: base)   // create-on-miss
+            }
 
-        guard let destination else { return }
-        let switching = selectedNoteID != destination.id
-        selectedNoteID = destination.id
+            guard let destination else { return }
+            let switching = selectedNoteID != destination.id
+            selectedNoteID = destination.id
 
-        if let heading {
-            Task {
+            if let heading {
                 await tabs.editor(for: destination)
                 if switching { try? await Task.sleep(for: .milliseconds(350)) }
                 scrollToHeading(heading)
