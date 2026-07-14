@@ -16,6 +16,11 @@ nonisolated enum MentionScanner {
     static func containsMention(of names: [String], in text: String) -> Bool {
         let ns = text as NSString
         for name in names where !name.trimmingCharacters(in: .whitespaces).isEmpty {
+            // Fast reject: a word-boundary regex over the whole note is
+            // expensive, so skip it entirely unless the substring is present
+            // at all. Most notes don't mention most other notes, so this
+            // avoids the vast majority of regex scans in a large collection.
+            guard text.range(of: name, options: .caseInsensitive) != nil else { continue }
             guard let regex = wordRegex(for: name) else { continue }
             let found = regex.matches(in: text, range: NSRange(location: 0, length: ns.length))
             for match in found where !isInsideWikiLink(match.range, in: ns) {
@@ -40,13 +45,21 @@ nonisolated enum MentionScanner {
 
     // MARK: - Private
 
-    /// A case-insensitive, word-boundaried matcher for a literal name.
+    /// Compiled word-boundary matchers, cached by name — building an
+    /// `NSRegularExpression` is costly and the same names are scanned against
+    /// thousands of notes. `NSCache` is thread-safe, matching `nonisolated`.
+    private static let regexCache = NSCache<NSString, NSRegularExpression>()
+
+    /// A case-insensitive, word-boundaried matcher for a literal name (cached).
     private static func wordRegex(for name: String) -> NSRegularExpression? {
+        if let cached = regexCache.object(forKey: name as NSString) { return cached }
         let escaped = NSRegularExpression.escapedPattern(for: name)
-        return try? NSRegularExpression(
+        guard let regex = try? NSRegularExpression(
             pattern: "(?<![\\p{L}0-9_])\(escaped)(?![\\p{L}0-9_])",
             options: [.caseInsensitive]
-        )
+        ) else { return nil }
+        regexCache.setObject(regex, forKey: name as NSString)
+        return regex
     }
 
     /// True when the match is immediately preceded by `[[` (i.e. it's already the

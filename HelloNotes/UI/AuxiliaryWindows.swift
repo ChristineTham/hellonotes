@@ -34,14 +34,30 @@ struct GraphWindowView: View {
     @State private var focusedURL: URL?
     @State private var depth = 2
 
-    /// Nodes and resolved edges for the current scope.
-    private var graphData: (nodes: [GraphNode], edges: [GraphEdge]) {
-        guard let c = library.focused else { return ([], []) }
+    /// A force-directed layout of every note is O(N²); past this many nodes the
+    /// whole-collection view keeps only the most-connected notes (and says so),
+    /// so the graph stays legible and fast instead of an unreadable hairball.
+    private static let maxNodes = 250
+
+    /// Nodes and resolved edges for the current scope, plus how many notes were
+    /// dropped by the `maxNodes` cap (0 when nothing was dropped).
+    private var graphData: (nodes: [GraphNode], edges: [GraphEdge], dropped: Int) {
+        guard let c = library.focused else { return ([], [], 0) }
 
         var notes = c.notes
         if scope == .aroundFocus, let focusedURL {
             let keep = neighbourhood(of: focusedURL, in: c, depth: depth)
             notes = notes.filter { keep.contains($0.fileURL) }
+        }
+
+        var dropped = 0
+        if notes.count > Self.maxNodes {
+            // Rank by degree (outgoing + backlinks) and keep the top slice.
+            let degree: (URL) -> Int = { url in
+                (c.linkGraph.outgoingByURL[url]?.count ?? 0) + (c.linkGraph.backlinksByURL[url]?.count ?? 0)
+            }
+            dropped = notes.count - Self.maxNodes
+            notes = Array(notes.sorted { degree($0.fileURL) > degree($1.fileURL) }.prefix(Self.maxNodes))
         }
 
         let indexByURL = Dictionary(uniqueKeysWithValues: notes.enumerated().map { ($1.fileURL, $0) })
@@ -53,7 +69,7 @@ struct GraphWindowView: View {
                 }
             }
         }
-        return (notes.map { GraphNode(url: $0.fileURL, label: $0.title) }, edges)
+        return (notes.map { GraphNode(url: $0.fileURL, label: $0.title) }, edges, dropped)
     }
 
     /// Every note within `depth` links of `url`, following links both ways.
@@ -99,6 +115,15 @@ struct GraphWindowView: View {
                               focusedURL = url
                               if url == nil && scope == .aroundFocus { scope = .collection }
                           })
+                    .overlay(alignment: .top) {
+                        if data.dropped > 0 {
+                            Text("Showing the \(Self.maxNodes) most-connected notes · \(data.dropped) more hidden")
+                                .font(.caption)
+                                .padding(.horizontal, 10).padding(.vertical, 5)
+                                .background(.thinMaterial, in: Capsule())
+                                .padding(.top, 8)
+                        }
+                    }
             }
         }
         .toolbar {

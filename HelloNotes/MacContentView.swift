@@ -54,6 +54,18 @@ struct MacContentView: View {
     /// Full-text query for the note list (searches across every collection).
     @State private var searchText = ""
 
+    /// Debounced full-text results, computed off the render path so typing in
+    /// the search field doesn't scan every note's body on each keystroke.
+    @State private var searchResults: [SearchGroup] = []
+    @State private var searchResultsRevision = 0
+    @State private var searchTask: Task<Void, Never>?
+    @State private var isSearchInFlight = false
+
+    /// Cached note-list outline, rebuilt only when its inputs change (see
+    /// `outlineInputsKey`) rather than re-derived (O(N log N)) every render.
+    @State private var cachedRoots: [NoteOutlineItem] = []
+    @State private var cachedSignature = ""
+
     @State private var showOpenQuickly = false
 
     /// Rename-note prompt state (set via the context menu or the Note menu).
@@ -78,7 +90,7 @@ struct MacContentView: View {
 
     /// The selected note, wherever it lives across the open collections.
     private var selectedNote: Note? {
-        library.allNotes.first { $0.id == selectedNoteID }
+        library.note(id: selectedNoteID)
     }
 
     /// The collection that owns the current selection (falls back to focused).
@@ -110,12 +122,30 @@ struct MacContentView: View {
         var id: Collection.ID { collection.id }
     }
 
-    private var searchGroups: [SearchGroup] {
-        library.collections.compactMap { collection in
-            let rows = collection.search.fullTextResults(query: searchText).map {
-                NoteRow(note: $0.note, snippet: $0.snippet.isEmpty ? nil : $0.snippet)
+    /// Recompute the debounced search results. Runs at most once per ~200 ms of
+    /// typing (not per keystroke), and computes the groups once (they used to be
+    /// recomputed twice per body — for the rows and the empty-state check).
+    private func scheduleSearch(_ raw: String) {
+        searchTask?.cancel()
+        let query = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            searchResults = []
+            searchResultsRevision &+= 1
+            isSearchInFlight = false
+            return
+        }
+        isSearchInFlight = true
+        searchTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            searchResults = library.collections.compactMap { collection in
+                let rows = collection.search.fullTextResults(query: query).map {
+                    NoteRow(note: $0.note, snippet: $0.snippet.isEmpty ? nil : $0.snippet)
+                }
+                return rows.isEmpty ? nil : SearchGroup(collection: collection, rows: rows)
             }
-            return rows.isEmpty ? nil : SearchGroup(collection: collection, rows: rows)
+            searchResultsRevision &+= 1
+            isSearchInFlight = false
         }
     }
 
@@ -145,7 +175,11 @@ struct MacContentView: View {
 
     private var currentNoteNames: [String] {
         guard let selectedNote, let c = editorCollection else { return [] }
-        let text = activeEditor?.text ?? c.search.text(of: selectedNote) ?? ""
+        // Derive names from the *indexed* text, not the live editor buffer:
+        // reading `activeEditor.text` here would re-run the whole references
+        // panel (an O(N) unlinked-mention scan) on every keystroke. Aliases
+        // refresh with the search index shortly after a save instead.
+        let text = c.search.text(of: selectedNote) ?? ""
         return [selectedNote.title] + MarkdownParsing.aliases(in: text)
     }
 
@@ -213,6 +247,10 @@ struct MacContentView: View {
             tabs.prune(keeping: Set(notes.map(\.id)))
             revalidateSelection()
         }
+        .onChange(of: searchText) { _, q in scheduleSearch(q) }
+        // Rebuild the (cached) note-list outline only when its structural inputs
+        // change — not on every unrelated body re-eval (selection, git, accent).
+        .onChange(of: outlineInputsKey, initial: true) { _, _ in rebuildOutline() }
         .onChange(of: tabs.totalSavedRevision) { _, _ in
             if let c = editorCollection {
                 Task { await c.git.refreshStatus() }
@@ -722,10 +760,9 @@ struct MacContentView: View {
     // MARK: - Column 2: Note list (all collections)
 
     private var noteList: some View {
-        let roots = outlineRoots
-        return NoteOutlineList(
-            roots: roots,
-            signature: outlineSignature(roots),
+        NoteOutlineList(
+            roots: cachedRoots,
+            signature: cachedSignature,
             selection: $selectedNoteID,
             focusedCollectionID: library.focusedID,
             accent: appearance.resolvedAccent,
@@ -830,7 +867,7 @@ struct MacContentView: View {
                     Button("Open…") { showLauncher = true }
                         .buttonStyle(.borderedProminent)
                 }
-            } else if isSearching && searchGroups.isEmpty {
+            } else if isSearching && searchResults.isEmpty && !isSearchInFlight {
                 ContentUnavailableView.search(text: searchText)
             }
         }
@@ -840,9 +877,9 @@ struct MacContentView: View {
 
     /// The outline tree for the current mode: collections as group rows, with
     /// their folder trees (or flat search / tag results) as children.
-    private var outlineRoots: [NoteOutlineItem] {
+    private func buildOutlineRoots() -> [NoteOutlineItem] {
         if isSearching {
-            return searchGroups.map { group in
+            return searchResults.map { group in
                 NoteOutlineItem(id: group.collection.id, kind: .collection(group.collection),
                                 children: group.rows.map {
                     NoteOutlineItem(id: $0.note.fileURL.path, kind: .note($0.note, snippet: $0.snippet))
@@ -877,13 +914,29 @@ struct MacContentView: View {
         }
     }
 
-    /// A cheap structural fingerprint so the outline reloads only when its
-    /// contents (not just selection/accent) change.
-    private func outlineSignature(_ roots: [NoteOutlineItem]) -> String {
-        func walk(_ items: [NoteOutlineItem]) -> String {
-            items.map { $0.id + "[" + walk($0.children) + "]" }.joined(separator: ",")
+    /// A cheap fingerprint of everything the outline depends on — collection
+    /// membership + each collection's structural `revision` + sort/mode/search.
+    /// O(collections), not O(notes): computed every render, but the expensive
+    /// `buildOutlineRoots()` only re-runs when this key actually changes.
+    private var outlineInputsKey: String {
+        let mode: String
+        if isSearching {
+            mode = "s:\(searchResultsRevision)"
+        } else if let selectedTag {
+            mode = "t:\(selectedTag):\(focused?.id ?? "")"
+        } else {
+            mode = "n:" + library.collections
+                .map { "\($0.id)#\($0.revision)" }
+                .joined(separator: ",")
         }
-        return "\(sortOrder.rawValue)|\(library.focusedID ?? "")|\(appearance.textScale)|" + walk(roots)
+        return "\(sortOrder.rawValue)|\(library.focusedID ?? "")|\(appearance.textScale)|\(mode)"
+    }
+
+    /// Rebuild and cache the outline tree + its signature. Called only when
+    /// `outlineInputsKey` changes.
+    private func rebuildOutline() {
+        cachedRoots = buildOutlineRoots()
+        cachedSignature = outlineInputsKey
     }
 
     // MARK: - Actions

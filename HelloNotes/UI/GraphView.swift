@@ -190,7 +190,7 @@ struct GraphView: View {
         }
         .overlay(alignment: .bottomLeading) { canvasFooter }
         .task(id: nodes) {
-            relayout()
+            await relayout()
             // A new node set (scope or collection change) means a new world
             // size — re-fit so the whole layout is visible again.
             if didInitialFit, viewportSize.width > 0 {
@@ -392,21 +392,30 @@ struct GraphView: View {
     /// layout gives the structure, a collision pass separates any nodes whose
     /// orbs or labels would overlap, and a rebase sizes the world so nothing
     /// clips at the edges.
-    private func relayout() {
+    private func relayout() async {
         guard !nodes.isEmpty else {
             positions = []
             contentSize = CGSize(width: 520, height: 520)
             return
         }
-        var centers = GraphLayout.positions(
-            count: nodes.count,
-            edges: edges.map { ($0.from, $0.to) },
-            size: layoutBaseSize
-        )
+        // The force layout and collision pass are both O(N²) per iteration —
+        // run them off the main actor so a large graph never freezes the UI.
+        // (Node count is also capped by the caller; this keeps the boundary
+        // case smooth.) The math is pure/`nonisolated`; only Sendable values
+        // (edge pairs, footprints, sizes) cross the actor hop.
+        let edgePairs = edges.map { ($0.from, $0.to) }
         let footprints = nodeFootprints
-        LayoutRelaxation.separate(centers: &centers, sizes: footprints, padding: 8, iterations: 80)
-        contentSize = LayoutRelaxation.rebase(centers: &centers, sizes: footprints, margin: 48)
-        positions = centers
+        let base = layoutBaseSize
+        let count = nodes.count
+        let result = await Task.detached(priority: .userInitiated) { () -> (centers: [CGPoint], size: CGSize) in
+            var centers = GraphLayout.positions(count: count, edges: edgePairs, size: base)
+            LayoutRelaxation.separate(centers: &centers, sizes: footprints, padding: 8, iterations: 80)
+            let size = LayoutRelaxation.rebase(centers: &centers, sizes: footprints, margin: 48)
+            return (centers, size)
+        }.value
+        guard !Task.isCancelled else { return }
+        contentSize = result.size
+        positions = result.centers
     }
 
     /// Hit-test in view coordinates against each node's drawn radius.

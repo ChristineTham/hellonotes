@@ -43,6 +43,13 @@ final class CollectionSearchModel {
 
     private var entries: [Entry] = []
 
+    // Derived aggregates, computed once per `refresh` and served from the cache.
+    // They used to be rebuilt over all entries on every call — and each is read
+    // several times per sidebar/editor render (`allTags` 3×), i.e. per keystroke.
+    private var cachedTags: [String] = []
+    private var cachedTagTree: [TagNode] = []
+    private var cachedLinkTargets: [String] = []
+
     /// Reload the content cache from the current notes (reads files off-main).
     func refresh(from notes: [Note]) async {
         let urls = notes.map(\.fileURL)
@@ -58,27 +65,29 @@ final class CollectionSearchModel {
         entries = loaded.compactMap { url, text, headings, tags, aliases in
             noteByURL[url].map { Entry(note: $0, text: text, headings: headings, tags: tags, aliases: aliases) }
         }
+        rebuildAggregates()
     }
 
-    /// All distinct hashtags across the collection, sorted case-insensitively.
-    func allTags() -> [String] {
-        let unique = Set(entries.flatMap(\.tags))
-        return unique.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-    }
-
-    /// The collection's hashtags as a hierarchical tree (`a/b` nests `b` under `a`).
-    func tagTree() -> [TagNode] {
-        TagTree.build(from: allTags())
-    }
-
-    /// All note titles plus their aliases — the candidate targets a
-    /// `[[wiki-link]]` can point at.
-    func linkTargets() -> [String] {
+    /// Recompute the cached tag / link-target aggregates from `entries`.
+    private func rebuildAggregates() {
+        cachedTags = Set(entries.flatMap(\.tags))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        cachedTagTree = TagTree.build(from: cachedTags)
         var seen = Set<String>()
-        return entries
+        cachedLinkTargets = entries
             .flatMap { [$0.note.title] + $0.aliases }
             .filter { seen.insert($0.lowercased()).inserted }
     }
+
+    /// All distinct hashtags across the collection, sorted case-insensitively.
+    func allTags() -> [String] { cachedTags }
+
+    /// The collection's hashtags as a hierarchical tree (`a/b` nests `b` under `a`).
+    func tagTree() -> [TagNode] { cachedTagTree }
+
+    /// All note titles plus their aliases — the candidate targets a
+    /// `[[wiki-link]]` can point at.
+    func linkTargets() -> [String] { cachedLinkTargets }
 
     /// Notes tagged with `tag` or any of its nested children (case-insensitive):
     /// selecting `project` also matches notes tagged `project/hellonotes`.

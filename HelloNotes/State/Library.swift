@@ -31,8 +31,45 @@ final class Library {
         collections.first { $0.id == focusedID } ?? collections.first
     }
 
+    // Cached flattened notes + id→note index, rebuilt only when a collection's
+    // structural `revision` changes. `allNotes` used to re-`flatMap` every open
+    // collection on each access (read many times per view body), and callers
+    // then linearly scanned it to resolve the selected note.
+    @ObservationIgnored private var cachedRevision = -1
+    @ObservationIgnored private var cachedAllNotes: [Note] = []
+    @ObservationIgnored private var cachedIndex: [Note.ID: Note] = [:]
+
+    /// Sum of collection revisions (+ count) — cheap, changes on any note-set change.
+    private var aggregateRevision: Int {
+        collections.reduce(collections.count) { $0 &+ $1.revision }
+    }
+
+    private func refreshCacheIfNeeded() {
+        let rev = aggregateRevision
+        guard rev != cachedRevision else { return }
+        cachedRevision = rev
+        var all: [Note] = []
+        var index: [Note.ID: Note] = [:]
+        for collection in collections {
+            all.append(contentsOf: collection.notes)
+            for note in collection.notes { index[note.id] = note }
+        }
+        cachedAllNotes = all
+        cachedIndex = index
+    }
+
     /// Notes across every open collection (for library-wide search / chat).
-    var allNotes: [Note] { collections.flatMap(\.notes) }
+    var allNotes: [Note] {
+        refreshCacheIfNeeded()
+        return cachedAllNotes
+    }
+
+    /// O(1) lookup of a note by id across all collections.
+    func note(id: Note.ID?) -> Note? {
+        guard let id else { return nil }
+        refreshCacheIfNeeded()
+        return cachedIndex[id]
+    }
 
     var isEmpty: Bool { collections.isEmpty }
 
@@ -60,9 +97,10 @@ final class Library {
     func collection(containing fileURL: URL) -> Collection? {
         let path = fileURL.standardizedFileURL.path
         return collections.first { collection in
-            var base = collection.rootURL.standardizedFileURL.path
-            if !base.hasSuffix("/") { base += "/" }
-            return path == collection.rootURL.standardizedFileURL.path || path.hasPrefix(base)
+            // `collection.id` is the already-standardised root path — reuse it
+            // instead of re-standardising the root on each of the many calls.
+            let base = collection.id
+            return path == base || path.hasPrefix(base.hasSuffix("/") ? base : base + "/")
         }
     }
 

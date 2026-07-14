@@ -40,6 +40,11 @@ final class Collection: Identifiable {
     /// created, or one whose last note moved out) still appear in the tree.
     var folders: [URL] = []
 
+    /// Bumped on every `scan()` — a cheap fingerprint of the note/attachment/
+    /// folder *set* so views can cache the folder tree and rebuild only when the
+    /// structure actually changes, instead of re-deriving it every render.
+    private(set) var revision = 0
+
     // MARK: Per-collection subsystems (isolated to this collection)
 
     /// The collection's `[[wiki-link]]` / backlink index.
@@ -103,6 +108,7 @@ final class Collection: Identifiable {
             notes = []
             attachments = []
             folders = []
+            revision &+= 1
             return
         }
 
@@ -138,6 +144,7 @@ final class Collection: Identifiable {
         notes = discovered.sorted { $0.lastModified > $1.lastModified }
         attachments = discoveredFiles.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
         folders = discoveredFolders
+        revision &+= 1
     }
 
     // MARK: - Lifecycle
