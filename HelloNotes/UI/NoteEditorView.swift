@@ -97,11 +97,36 @@ struct NoteEditorView: View {
     @State private var findMatchCount = 0
     @State private var findCurrentIndex = 0
 
+    /// Whole-document derivations shown in the bottom bar. These are O(text)
+    /// scans, so they are NOT computed properties: a computed property would
+    /// re-scan the entire note on every body evaluation (several ms on large
+    /// notes, once per keystroke). Instead they're recomputed off the main
+    /// actor, debounced, whenever the text actually changes — see the
+    /// `.task(id:)` in `body`.
+    private struct DocStats: Equatable {
+        var wordCount = 0
+        var hasMermaid = false
+        var isMarp = false
+    }
+    @State private var docStats = DocStats()
+
+    private nonisolated static func computeStats(for text: String) -> DocStats {
+        DocStats(
+            wordCount: FrontMatter.body(of: text)
+                .split { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" }
+                .count,
+            hasMermaid: !MarkdownParsing.mermaidBlocks(in: text).isEmpty,
+            isMarp: MarpSlides.isMarp(text)
+        )
+    }
+
     /// Splice the edited properties back into the note's front matter.
     private func applyProperties() {
         editor.text = FrontMatter.applying(properties, to: editor.text)
     }
 
+    /// On-demand Mermaid extraction for the preview sheet (evaluated only when
+    /// the sheet is presented, never during ordinary body evaluation).
     private var mermaidSources: [String] {
         MarkdownParsing.mermaidBlocks(in: editor.text)
     }
@@ -267,6 +292,17 @@ struct NoteEditorView: View {
                     properties = FrontMatter.properties(in: editor.text)
                     showProperties = false
                 }
+                .task(id: editor.text) {
+                    // Debounce so key-repeat typing doesn't queue a full-text
+                    // scan per keystroke; compute off-main so even a
+                    // megabyte note never blocks the caret.
+                    if docStats != DocStats() {
+                        try? await Task.sleep(for: .milliseconds(150))
+                        guard !Task.isCancelled else { return }
+                    }
+                    let text = editor.text
+                    docStats = await Task.detached { Self.computeStats(for: text) }.value
+                }
                 .onChange(of: editor.note?.fileURL) { _, _ in
                     if showFindBar { closeFindBar() }
                 }
@@ -349,7 +385,15 @@ struct NoteEditorView: View {
             onSmartPaste: smartPaste,
             onLinkClick: onOpenWikiLink,
             onCaretRectChange: { caretRect = $0 },
-            onInlineSelectionChange: { inlineSelection = $0 }
+            onInlineSelectionChange: { newValue in
+                // The engine reports nil on every caret move through plain
+                // text. InlineSelectionState isn't Equatable, so writing nil
+                // over nil would still re-evaluate this whole view once per
+                // caret move — skip the no-op writes.
+                if inlineSelection != nil || newValue != nil {
+                    inlineSelection = newValue
+                }
+            }
         )
         .overlay(alignment: .topLeading) {
             let matches = activeCompletions
@@ -710,7 +754,7 @@ struct NoteEditorView: View {
         HStack(spacing: 8) {
             // Status (left). Single-line and truncating, so a narrow window
             // shortens the text instead of wrapping it vertically.
-            Text("\(wordCount) word\(wordCount == 1 ? "" : "s")")
+            Text("\(docStats.wordCount) word\(docStats.wordCount == 1 ? "" : "s")")
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Divider().frame(height: 11)
@@ -738,10 +782,10 @@ struct NoteEditorView: View {
                     OutlineView(text: editor.text, onSelectHeading: jumpToHeading)
                 }
             barButton("Mind map of this note's ideas", "brain") { onShowMindMap() }
-            if MarpSlides.isMarp(editor.text) {
+            if docStats.isMarp {
                 barButton("Present as slides (Marp)", "rectangle.on.rectangle") { showSlides = true }
             }
-            if !mermaidSources.isEmpty {
+            if docStats.hasMermaid {
                 barButton("Preview Mermaid diagrams", "chart.xyaxis.line") { showMermaid = true }
             }
             if intelligence.isAvailable {
@@ -802,12 +846,6 @@ struct NoteEditorView: View {
         .accessibilityLabel(help)
     }
 
-    /// Word count of the note body (front matter excluded).
-    private var wordCount: Int {
-        FrontMatter.body(of: editor.text)
-            .split { $0 == " " || $0 == "\n" || $0 == "\t" || $0 == "\r" }
-            .count
-    }
 
     // Bridges are stateless and expensive-ish to build, so share one instance.
     private static let syntaxHighlighter = HighlighterSwiftBridge()
