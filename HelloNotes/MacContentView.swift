@@ -173,9 +173,9 @@ struct MacContentView: View {
 
     private var currentNoteNames: [String] {
         guard let selectedNote, let c = editorCollection else { return [] }
-        // Derive names from the *indexed* text, not the live editor buffer.
-        let text = c.search.text(of: selectedNote) ?? ""
-        return [selectedNote.title] + MarkdownParsing.aliases(in: text)
+        // Cached aliases from the index — available immediately from the
+        // persistent cache, even before note text streams in.
+        return [selectedNote.title] + c.search.aliases(of: selectedNote.fileURL)
     }
 
     /// Backlinks / outgoing links / unlinked mentions for the references panel.
@@ -438,6 +438,9 @@ struct MacContentView: View {
                         if let c = library.collection(containing: note.fileURL) { delete(note, in: c) }
                     }
                 )
+            },
+            rescan: focused.map { collection in
+                { collection.rescan() }
             }
         )
     }

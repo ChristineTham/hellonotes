@@ -44,6 +44,10 @@ struct AppActions {
     var format: ((FormatAction) -> Void)?
     /// Actions on the selected note; `nil` when no note is selected.
     var note: NoteMenuActions?
+    /// Rebuild the focused collection's index from scratch, ignoring the cache
+    /// — the safety valve if the index ever looks stale. `nil` when no
+    /// collection is open.
+    var rescan: (() -> Void)?
 }
 
 /// Menu actions that act on the selected note.
@@ -106,6 +110,14 @@ struct HelloNotesCommands: Commands {
             Button("Open Quickly…") { actions?.openQuickly() }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
                 .disabled(!(actions?.canOpenQuickly ?? false))
+
+            Divider()
+
+            // The index cache makes launches instant; this is the escape hatch
+            // that rebuilds it from scratch if it ever looks stale.
+            Button("Rescan Collection") { actions?.rescan?() }
+                .keyboardShortcut("r", modifiers: [.command, .option])
+                .disabled(actions?.rescan == nil)
 
             Divider()
 

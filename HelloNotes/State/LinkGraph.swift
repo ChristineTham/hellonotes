@@ -68,6 +68,31 @@ final class LinkGraph {
         resolution = result.resolve
     }
 
+    /// Rebuild the entire graph from already-parsed metadata — no file reads.
+    /// This is pure in-memory work (O(notes + links), a few ms even for
+    /// thousands of notes), so it's always correct to call after any change:
+    /// backlinks and alias resolution are derived fresh from every record.
+    func load(pairs: [(note: Note, record: NoteIndexRecord)]) {
+        var resolve: [String: URL] = [:]
+        for (note, record) in pairs {
+            resolve[note.title.lowercased()] = note.fileURL
+            for alias in record.aliases { resolve[alias.lowercased()] = note.fileURL }
+        }
+        var back: [URL: Set<URL>] = [:]
+        var out: [URL: [String]] = [:]
+        for (note, record) in pairs {
+            out[note.fileURL] = record.outgoing
+            for target in record.outgoing where !target.isEmpty {
+                if let dest = resolve[target.lowercased()] {
+                    back[dest, default: []].insert(note.fileURL)
+                }
+            }
+        }
+        backlinksByURL = back
+        outgoingByURL = out
+        resolution = resolve
+    }
+
     /// Incrementally re-index a single note from its in-memory text — no disk
     /// read, no whole-vault rebuild. Correct when the note's title and aliases
     /// are unchanged (an alias/title change can alter *other* notes' backlinks,

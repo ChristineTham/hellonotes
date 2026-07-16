@@ -18,10 +18,15 @@ nonisolated struct Note: Identifiable, Hashable {
     var title: String
     var fileURL: URL
     var lastModified: Date
+    /// File size in bytes, captured at scan time. Together with `lastModified`
+    /// it fingerprints the content so the index cache can tell whether a note
+    /// changed without reading it.
+    var fileSize: Int
 
-    init(title: String, fileURL: URL, lastModified: Date) {
+    init(title: String, fileURL: URL, lastModified: Date, fileSize: Int = 0) {
         self.title = title
         self.fileURL = fileURL
         self.lastModified = lastModified
+        self.fileSize = fileSize
     }
 }

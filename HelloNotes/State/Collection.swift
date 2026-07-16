@@ -105,7 +105,7 @@ final class Collection: Identifiable {
     /// large collection is thousands of `stat` calls that shouldn't block the UI.
     nonisolated static func enumerate(_ rootURL: URL) -> (notes: [Note], attachments: [CollectionFile], folders: [URL]) {
         let fileManager = FileManager.default
-        let resourceKeys: [URLResourceKey] = [.contentModificationDateKey, .contentTypeKey, .isRegularFileKey, .isDirectoryKey]
+        let resourceKeys: [URLResourceKey] = [.contentModificationDateKey, .contentTypeKey, .isRegularFileKey, .isDirectoryKey, .fileSizeKey]
 
         guard let enumerator = fileManager.enumerator(
             at: rootURL,
@@ -137,7 +137,8 @@ final class Collection: Identifiable {
                 discovered.append(Note(
                     title: fileURL.deletingPathExtension().lastPathComponent,
                     fileURL: fileURL,
-                    lastModified: modified
+                    lastModified: modified,
+                    fileSize: resourceValues.fileSize ?? 0
                 ))
             } else {
                 discoveredFiles.append(CollectionFile(url: fileURL, lastModified: modified))
@@ -193,28 +194,65 @@ final class Collection: Identifiable {
         if securityScoped { rootURL.stopAccessingSecurityScopedResource(); securityScoped = false }
     }
 
-    /// Rebuild the wiki-link resolver, embed provider, backlink graph and search
-    /// index from the current note set.
-    func refreshDerived() {
+    /// Bring the derived index (link graph, search, tags) up to date.
+    ///
+    /// Cache-first: each note's parsed metadata persists in the
+    /// ``CollectionIndexCache`` fingerprinted by mtime + size, so only notes
+    /// that actually changed since the cache was written are re-read and
+    /// re-parsed — on a warm launch that is usually *none*, and the whole
+    /// index is live in milliseconds instead of re-reading the collection.
+    /// The graph and aggregates are then rebuilt from metadata entirely in
+    /// memory, which keeps this correct for every kind of change.
+    ///
+    /// `force` ignores the cache and re-parses everything (the Rescan command).
+    func refreshDerived(force: Bool = false) {
         wikiResolver.update(titles: notes.map(\.title))
         embedProvider.update(notes: notes)
         let noteList = notes
-        Task {
-            // Read every note once, off-main, and feed both the link graph and
-            // the search index from the shared texts — they used to each read
-            // the whole collection independently (2× the disk I/O).
-            let urls = noteList.map(\.fileURL)
-            let texts = await Task.detached(priority: .utility) { () -> [URL: String] in
-                var map: [URL: String] = [:]
-                for url in urls where map[url] == nil {
-                    if let text = try? String(contentsOf: url, encoding: .utf8) { map[url] = text }
+        let root = rootURL
+        deriveTask?.cancel()
+        deriveTask = Task {
+            let pairs = await Task.detached(priority: .userInitiated) { () -> [(note: Note, record: NoteIndexRecord, freshText: String?)] in
+                let cached = force ? [:] : (CollectionIndexCache.load(for: root) ?? [:])
+                var pairs: [(note: Note, record: NoteIndexRecord, freshText: String?)] = []
+                var reparsed = 0
+                for note in noteList {
+                    let rel = CollectionIndexCache.relativePath(of: note.fileURL, in: root)
+                    if let record = cached[rel], record.matches(note) {
+                        pairs.append((note, record, nil))
+                    } else if let text = try? String(contentsOf: note.fileURL, encoding: .utf8) {
+                        pairs.append((note, CollectionIndexCache.record(for: note, relativeTo: root, text: text), text))
+                        reparsed += 1
+                    }
                 }
-                return map
+                // Persist when anything was re-parsed or notes were removed.
+                if reparsed > 0 || pairs.count != cached.count {
+                    CollectionIndexCache.save(pairs.map { $0.record }, for: root)
+                }
+                return pairs
             }.value
-            await linkGraph.rebuild(from: noteList, texts: texts)
-            await search.refresh(from: noteList, texts: texts)
+            guard !Task.isCancelled else { return }
+
+            linkGraph.load(pairs: pairs.map { ($0.note, $0.record) })
+            search.load(pairs: pairs)
             wikiResolver.update(titles: Array(linkGraph.resolution.keys))
             derivedRevision &+= 1
+
+            // Second wave: stream in note text for full-text search / mention
+            // scanning without holding up the metadata-driven features above.
+            await search.fillMissingTexts()
+            guard !Task.isCancelled else { return }
+            derivedRevision &+= 1
+        }
+    }
+
+    /// Rebuild everything from scratch, ignoring the index cache — the safety
+    /// valve for when the index ever looks wrong.
+    func rescan() {
+        CollectionIndexCache.remove(for: rootURL)
+        Task {
+            await scanOffMain()
+            refreshDerived(force: true)
         }
     }
 
@@ -276,8 +314,13 @@ final class Collection: Identifiable {
             deriveTask?.cancel()
             deriveTask = Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(800))
-                guard !Task.isCancelled else { return }
-                self?.refreshDerived()
+                guard !Task.isCancelled, let self else { return }
+                // Re-stat first: the cache diff compares against each note's
+                // scanned mtime/size, and this save just changed them on disk —
+                // without a fresh scan the edited note would look unchanged and
+                // its stale cached metadata would reload.
+                await self.scanOffMain()
+                self.refreshDerived()
             }
         }
     }

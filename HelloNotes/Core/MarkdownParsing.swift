@@ -9,7 +9,8 @@ import Foundation
 import Markdown
 
 /// A heading discovered in a note, used for outline / "Open Quickly" features.
-nonisolated struct DocumentHeading: Hashable {
+/// `Codable` so parsed headings can persist in the collection index cache.
+nonisolated struct DocumentHeading: Hashable, Codable {
     let level: Int
     let title: String
 }
@@ -152,10 +153,54 @@ nonisolated enum MarkdownParsing {
     }
 
     /// The headings in `text`, in document order, parsed from the GFM AST.
+    /// Authoritative but expensive (a full CommonMark parse) — use for a single
+    /// note (the outline); bulk indexing uses ``fastHeadings(in:)``.
     static func headings(in text: String) -> [DocumentHeading] {
         var collector = HeadingCollector()
         collector.visit(Document(parsing: text))
         return collector.headings
+    }
+
+    /// Headings via a fence-aware line scan — an order of magnitude faster than
+    /// the AST parse, for bulk indexing of whole collections. Covers ATX
+    /// (`# Title`) and `=`-underline setext headings, and ignores fenced code.
+    /// (`-`-underline setext is skipped: ambiguous with front matter and rules.)
+    static func fastHeadings(in text: String) -> [DocumentHeading] {
+        var result: [DocumentHeading] = []
+        var inFence = false
+        var previous: Substring = ""
+
+        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.drop(while: { $0 == " " || $0 == "\t" })
+
+            if line.hasPrefix("```") || line.hasPrefix("~~~") {
+                inFence.toggle()
+                previous = ""
+                continue
+            }
+            guard !inFence else { continue }
+
+            if line.first == "#" {
+                let hashes = line.prefix(while: { $0 == "#" })
+                let rest = line.dropFirst(hashes.count)
+                if hashes.count <= 6, rest.first == " " || rest.first == "\t" {
+                    let title = rest.trimmingCharacters(in: .whitespaces)
+                    if !title.isEmpty {
+                        result.append(DocumentHeading(level: hashes.count, title: title))
+                    }
+                }
+                previous = ""   // a heading can't be a setext base
+                continue
+            }
+            if !line.isEmpty, line.allSatisfy({ $0 == "=" }), !previous.isEmpty {
+                // Setext H1: a line of `=` under a text line.
+                result.append(DocumentHeading(level: 1, title: previous.trimmingCharacters(in: .whitespaces)))
+                previous = ""   // the underline is consumed
+                continue
+            }
+            previous = line
+        }
+        return result
     }
 
     // MARK: - Private

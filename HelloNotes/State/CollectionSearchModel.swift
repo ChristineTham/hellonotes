@@ -81,6 +81,43 @@ final class CollectionSearchModel {
         rebuildAggregates()
     }
 
+    /// Populate the index from already-parsed metadata (the persistent index
+    /// cache) — no file reads. `freshText` carries the content of notes that
+    /// were just re-parsed; unchanged notes keep any text already in memory,
+    /// and the rest is streamed in by ``fillMissingTexts()`` right after — so
+    /// tags, Open Quickly, and link targets are ready immediately, and
+    /// full-text search warms up moments later.
+    func load(pairs: [(note: Note, record: NoteIndexRecord, freshText: String?)]) {
+        entries = pairs.map { note, record, freshText in
+            Entry(note: note,
+                  text: freshText ?? entryByURL[note.fileURL]?.text ?? "",
+                  headings: record.headings,
+                  tags: record.tags,
+                  aliases: record.aliases)
+        }
+        rebuildAggregates()
+    }
+
+    /// Read the text of any entry still missing it, off the main actor.
+    func fillMissingTexts() async {
+        let missing = entries.filter(\.text.isEmpty).map(\.note.fileURL)
+        guard !missing.isEmpty else { return }
+        let texts = await Task.detached(priority: .utility) { () -> [URL: String] in
+            var map: [URL: String] = [:]
+            for url in missing {
+                if let text = try? String(contentsOf: url, encoding: .utf8) { map[url] = text }
+            }
+            return map
+        }.value
+        for index in entries.indices where entries[index].text.isEmpty {
+            guard let text = texts[entries[index].note.fileURL] else { continue }
+            let old = entries[index]
+            entries[index] = Entry(note: old.note, text: text, headings: old.headings,
+                                   tags: old.tags, aliases: old.aliases)
+        }
+        rebuildAggregates()
+    }
+
     /// Recompute the cached tag / link-target aggregates from `entries`.
     private func rebuildAggregates() {
         entryByURL = Dictionary(entries.map { ($0.note.fileURL, $0) }, uniquingKeysWith: { first, _ in first })
@@ -150,10 +187,11 @@ final class CollectionSearchModel {
     /// no disk read. Used to keep the index fresh after a save without
     /// re-reading the whole collection.
     func updateNote(_ note: Note, text: String) {
+        let parsed = CollectionIndexCache.parse(text)
         let entry = Entry(note: note, text: text,
-                          headings: MarkdownParsing.headings(in: text),
-                          tags: MarkdownParsing.tags(in: text),
-                          aliases: MarkdownParsing.aliases(in: text))
+                          headings: parsed.headings,
+                          tags: parsed.tags,
+                          aliases: parsed.aliases)
         if let i = entries.firstIndex(where: { $0.note.fileURL == note.fileURL }) {
             entries[i] = entry
         } else {
