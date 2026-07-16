@@ -163,6 +163,9 @@ struct MacContentView: View {
 
             // Second wave: matches *inside attachments* (PDFs, documents, …) via
             // the system Spotlight index — content macOS already indexed for us.
+            // Skipped for 1–2 character queries, which would churn through
+            // enormous result sets for no discriminating value.
+            guard query.count >= 3 else { return }
             let hits = await spotlight.search(query, in: library.collections.map(\.rootURL))
             guard !Task.isCancelled, !hits.isEmpty else { return }
             let hitPaths = Set(hits.map { $0.standardizedFileURL.path })
