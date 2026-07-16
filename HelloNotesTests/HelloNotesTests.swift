@@ -316,8 +316,9 @@ struct HelloNotesTests {
         let search = CollectionSearchModel()
         await search.refresh(from: indexer.notes)
 
-        // "local-first" appears only in Welcome's body.
-        let hits = search.fullTextResults(query: "local-first")
+        // "local-first" appears only in Welcome's body. Content search reads
+        // the hit files on demand — nothing is held in memory.
+        let hits = await search.fullTextResults(query: "local-first")
         #expect(hits.map(\.note.title) == ["Welcome"])
         #expect(hits.first?.snippet.contains("local-first") == true)
     }

@@ -95,10 +95,17 @@ struct LibraryChatView: View {
         busy = true
         errorText = nil
         answer = nil
-        let retrieved = retrieve(q)
-        sources = retrieved
-        let context = retrieved.map { (title: $0.title, text: text(of: $0) ?? "") }
         Task {
+            // Retrieval reads note files on demand (the search index no longer
+            // keeps content in memory), so it runs off the main actor.
+            let retrieved = await retrieve(q)
+            sources = retrieved
+            let context = await Task.detached(priority: .userInitiated) {
+                retrieved.map { note in
+                    (title: note.title,
+                     text: (try? String(contentsOf: note.fileURL, encoding: .utf8)) ?? "")
+                }
+            }.value
             do {
                 if context.isEmpty {
                     answer = "I couldn't find any notes related to that."
@@ -112,18 +119,20 @@ struct LibraryChatView: View {
         }
     }
 
-    /// The note's text from whichever collection's index has it.
-    private func text(of note: Note) -> String? {
-        searches.lazy.compactMap { $0.text(of: note) }.first
-    }
-
     /// Full-text hits across every collection, best snippets first.
-    private func fullText(_ q: String) -> [Note] {
-        searches.flatMap { $0.fullTextResults(query: q) }.map(\.note)
+    private func fullText(_ q: String) async -> [Note] {
+        var hits: [Note] = []
+        for search in searches {
+            hits += await search.fullTextResults(query: q).map(\.note)
+        }
+        return hits
     }
 
     /// Top notes by keyword-overlap with the question; falls back to full-text.
-    private func retrieve(_ q: String) -> [Note] {
+    /// Scans the collection's files off the main actor — a question is a
+    /// user-initiated, model-latency-dominated operation, so the read pass is
+    /// negligible next to the answer itself.
+    private func retrieve(_ q: String) async -> [Note] {
         let stop: Set<String> = ["the", "and", "for", "with", "what", "which", "when", "where",
                                  "how", "does", "did", "are", "was", "were", "that", "this", "from", "about", "your", "have"]
         let keywords = q.lowercased()
@@ -132,20 +141,24 @@ struct LibraryChatView: View {
             .filter { $0.count > 3 && !stop.contains($0) }
 
         if keywords.isEmpty {
-            return Array(fullText(q).prefix(4))
+            return await Array(fullText(q).prefix(4))
         }
 
-        let scored: [(Note, Int)] = notes.compactMap { note in
-            guard let text = text(of: note)?.lowercased() else { return nil }
-            let score = keywords.reduce(0) { acc, kw in
-                acc + max(0, text.components(separatedBy: kw).count - 1)
+        let candidates = notes
+        let scored = await Task.detached(priority: .userInitiated) { () -> [(Note, Int)] in
+            candidates.compactMap { note in
+                guard let text = (try? String(contentsOf: note.fileURL, encoding: .utf8))?.lowercased()
+                else { return nil }
+                let score = keywords.reduce(0) { acc, kw in
+                    acc + max(0, text.components(separatedBy: kw).count - 1)
+                }
+                return score > 0 ? (note, score) : nil
             }
-            return score > 0 ? (note, score) : nil
-        }
-        .sorted { $0.1 > $1.1 }
+            .sorted { $0.1 > $1.1 }
+        }.value
 
         if scored.isEmpty {
-            return Array(fullText(q).prefix(4))
+            return await Array(fullText(q).prefix(4))
         }
         return Array(scored.prefix(4).map(\.0))
     }

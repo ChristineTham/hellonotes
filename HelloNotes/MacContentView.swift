@@ -64,6 +64,11 @@ struct MacContentView: View {
     /// System Spotlight-index query for matches inside attachments (PDFs etc.).
     @State private var spotlight = SpotlightSearch()
 
+    /// A separate Spotlight query for the references panel's unlinked-mention
+    /// candidates, so selecting a note never cancels an in-flight sidebar search
+    /// (each SpotlightSearch supersedes its own previous query).
+    @State private var referenceSpotlight = SpotlightSearch()
+
     /// Cached note-list outline, rebuilt only when its inputs change (see
     /// `outlineInputsKey`) rather than re-derived (O(N log N)) every render.
     @State private var cachedRoots: [NoteOutlineItem] = []
@@ -151,9 +156,11 @@ struct MacContentView: View {
         searchTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(200))
             guard !Task.isCancelled else { return }
+            // Wave 1: title/alias hits, straight from the metadata index —
+            // instant, no file reads.
             searchResults = library.collections.compactMap { collection in
-                let rows = collection.search.fullTextResults(query: query).map {
-                    NoteRow(note: $0.note, snippet: $0.snippet.isEmpty ? nil : $0.snippet)
+                let rows = collection.search.titleResults(query: query).map {
+                    NoteRow(note: $0.note, snippet: nil)
                 }
                 return rows.isEmpty ? nil : SearchGroup(collection: collection, rows: rows)
             }
@@ -161,21 +168,34 @@ struct MacContentView: View {
             isSearchInFlight = false
             rebuildOutline()   // reflect results immediately, independent of key timing
 
-            // Second wave: matches *inside attachments* (PDFs, documents, …) via
-            // the system Spotlight index — content macOS already indexed for us.
-            // Skipped for 1–2 character queries, which would churn through
-            // enormous result sets for no discriminating value.
+            // Wave 2: *content* matches — inside notes and attachments (PDFs,
+            // documents, …) — via the system Spotlight index. Spotlight names
+            // the files whose content matches; only those files are then read
+            // (off-main) to verify and extract snippets, so a query costs a
+            // handful of reads, not a pass over the whole collection. Zero
+            // Spotlight hits simply means no content matches (Finder
+            // semantics); title hits above still stand. Skipped for 1–2
+            // character queries, which would churn through enormous result
+            // sets for no discriminating value.
             guard query.count >= 3 else { return }
             let hits = await spotlight.search(query, in: library.collections.map(\.rootURL))
             guard !Task.isCancelled, !hits.isEmpty else { return }
             let hitPaths = Set(hits.map { $0.standardizedFileURL.path })
             var merged: [SearchGroup] = []
             for collection in library.collections {
+                let mdCandidates = collection.notes.map(\.fileURL)
+                    .filter { hitPaths.contains($0.standardizedFileURL.path) }
+                let contentHits = await collection.search.contentResults(query: query, in: mdCandidates)
+                guard !Task.isCancelled else { return }
+                let contentURLs = Set(contentHits.map(\.id))
+                let titleRows = (searchResults.first { $0.id == collection.id }?.rows ?? [])
+                    .filter { !contentURLs.contains($0.note.fileURL) }
+                let rows = contentHits.map { NoteRow(note: $0.note, snippet: $0.snippet) } + titleRows
                 let files = collection.attachments.filter { hitPaths.contains($0.url.standardizedFileURL.path) }
-                let rows = searchResults.first { $0.id == collection.id }?.rows ?? []
                 guard !rows.isEmpty || !files.isEmpty else { continue }
                 merged.append(SearchGroup(collection: collection, rows: rows, fileRows: files))
             }
+            guard !Task.isCancelled else { return }
             searchResults = merged
             searchResultsRevision &+= 1
             rebuildOutline()
@@ -216,9 +236,13 @@ struct MacContentView: View {
         "\(selectedNoteID?.path ?? "")|\(editorCollection?.derivedRevision ?? 0)"
     }
 
-    /// Recompute the references panel off the main thread. The unlinked-mention
-    /// scan is O(N notes); doing it in the view body made *selecting* a note (or
-    /// arrow-keying through the list) run that scan on the main actor each time.
+    /// Recompute the references panel off the main thread.
+    ///
+    /// Unlinked mentions no longer scan an in-memory corpus (note text isn't
+    /// kept resident any more): Spotlight names the files whose content
+    /// contains the note's title/aliases, and only those few candidates are
+    /// read and verified with the word-boundary scanner. On a volume without
+    /// a Spotlight index the panel degrades to backlinks + outgoing links.
     private func computeReferences() async {
         guard let note = selectedNote, let c = editorCollection else {
             references = ReferencesData(); return
@@ -226,11 +250,22 @@ struct MacContentView: View {
         let back = c.linkGraph.backlinks(for: note, in: c.notes)
         let out = c.linkGraph.outgoingLinks(for: note, in: c.notes)
         let names = currentNoteNames
-        let corpus = c.search.mentionCorpus()
         let excluded = Set(back.map(\.fileURL)).union([note.fileURL])
+
+        var candidatePaths: Set<String> = []
+        for name in names {
+            let hits = await referenceSpotlight.search(name, in: [c.rootURL])
+            guard !Task.isCancelled else { return }
+            candidatePaths.formUnion(hits.map { $0.standardizedFileURL.path })
+        }
+        let candidates = c.notes.filter {
+            candidatePaths.contains($0.fileURL.standardizedFileURL.path)
+                && !excluded.contains($0.fileURL)
+        }
+
         let mentions = await Task.detached(priority: .userInitiated) { () -> [Note] in
-            corpus.compactMap { candidate, text in
-                guard !excluded.contains(candidate.fileURL),
+            candidates.compactMap { candidate in
+                guard let text = try? String(contentsOf: candidate.fileURL, encoding: .utf8),
                       MentionScanner.containsMention(of: names, in: text) else { return nil }
                 return candidate
             }

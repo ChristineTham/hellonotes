@@ -73,7 +73,7 @@ struct SearchNotesTool: AgentTool {
     func run(_ arguments: JSONValue, context: ToolContext) async throws -> String {
         guard let query = arguments.string("query") else { throw ToolError.badArguments("`query` is required.") }
         let limit = arguments.int("limit") ?? 8
-        let hits = Array(context.search.fullTextResults(query: query).prefix(limit))
+        let hits = await Array(context.search.fullTextResults(query: query).prefix(limit))
         guard !hits.isEmpty else { return "No notes matched “\(query)”." }
         return hits.map { hit in
             let snippet = hit.snippet.replacingOccurrences(of: "\n", with: " ")

@@ -26,16 +26,17 @@ struct QuickOpenItem: Identifiable, Hashable {
     var score: Int = 0
 }
 
-/// Caches note contents (and their headings) so the UI can run full-text
-/// search and fuzzy "Open Quickly" lookups over the whole collection without
-/// re-reading the disk on every keystroke. The cache is refreshed off the
-/// main actor whenever the note set or a note's contents change.
+/// Indexes note *metadata* (headings, tags, aliases) so the UI can run tag
+/// browsing, fuzzy "Open Quickly" lookups and title search over the whole
+/// collection instantly. Note *content* is deliberately not kept in memory —
+/// on a multi-hundred-megabyte collection that alone dominated the app's
+/// footprint. Content search reads only the files it needs, on demand, off
+/// the main actor (with Spotlight narrowing the candidates on macOS).
 @MainActor
 @Observable
 final class CollectionSearchModel {
     private struct Entry {
         let note: Note
-        let text: String
         let headings: [DocumentHeading]
         let tags: [String]
         let aliases: [String]
@@ -50,70 +51,38 @@ final class CollectionSearchModel {
     private var cachedTagTree: [TagNode] = []
     private var cachedLinkTargets: [String] = []
     private var cachedItems: [QuickOpenItem] = []
-    /// Entries keyed by URL, so per-note lookups (text/aliases on the selection
+    /// Entries keyed by URL, so per-note lookups (aliases on the selection
     /// and save paths) are O(1) instead of a linear scan of every entry.
     private var entryByURL: [URL: Entry] = [:]
 
-    /// Reload the content cache from the current notes. Reads files off-main,
-    /// or reuses `sharedTexts` when the caller already read them (so the link
-    /// graph and search index don't each read the whole collection).
-    func refresh(from notes: [Note], texts sharedTexts: [URL: String]? = nil) async {
+    /// Reload the metadata index from the current notes. Reads files off-main
+    /// to parse them; the text itself is discarded after parsing.
+    func refresh(from notes: [Note]) async {
         let urls = notes.map(\.fileURL)
         let noteByURL = Dictionary(notes.map { ($0.fileURL, $0) }, uniquingKeysWith: { first, _ in first })
 
-        let loaded = await Task.detached(priority: .utility) { () -> [(URL, String, [DocumentHeading], [String], [String])] in
+        let loaded = await Task.detached(priority: .utility) { () -> [(URL, [DocumentHeading], [String], [String])] in
             urls.compactMap { url in
-                let text: String
-                if let sharedTexts {
-                    guard let shared = sharedTexts[url] else { return nil }
-                    text = shared
-                } else {
-                    guard let read = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-                    text = read
-                }
-                return (url, text, MarkdownParsing.headings(in: text), MarkdownParsing.tags(in: text), MarkdownParsing.aliases(in: text))
+                guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                let parsed = CollectionIndexCache.parse(text)
+                return (url, parsed.headings, parsed.tags, parsed.aliases)
             }
         }.value
 
-        entries = loaded.compactMap { url, text, headings, tags, aliases in
-            noteByURL[url].map { Entry(note: $0, text: text, headings: headings, tags: tags, aliases: aliases) }
+        entries = loaded.compactMap { url, headings, tags, aliases in
+            noteByURL[url].map { Entry(note: $0, headings: headings, tags: tags, aliases: aliases) }
         }
         rebuildAggregates()
     }
 
     /// Populate the index from already-parsed metadata (the persistent index
-    /// cache) — no file reads. `freshText` carries the content of notes that
-    /// were just re-parsed; unchanged notes keep any text already in memory,
-    /// and the rest is streamed in by ``fillMissingTexts()`` right after — so
-    /// tags, Open Quickly, and link targets are ready immediately, and
-    /// full-text search warms up moments later.
-    func load(pairs: [(note: Note, record: NoteIndexRecord, freshText: String?)]) {
-        entries = pairs.map { note, record, freshText in
+    /// cache) — no file reads at all.
+    func load(pairs: [(note: Note, record: NoteIndexRecord)]) {
+        entries = pairs.map { note, record in
             Entry(note: note,
-                  text: freshText ?? entryByURL[note.fileURL]?.text ?? "",
                   headings: record.headings,
                   tags: record.tags,
                   aliases: record.aliases)
-        }
-        rebuildAggregates()
-    }
-
-    /// Read the text of any entry still missing it, off the main actor.
-    func fillMissingTexts() async {
-        let missing = entries.filter(\.text.isEmpty).map(\.note.fileURL)
-        guard !missing.isEmpty else { return }
-        let texts = await Task.detached(priority: .utility) { () -> [URL: String] in
-            var map: [URL: String] = [:]
-            for url in missing {
-                if let text = try? String(contentsOf: url, encoding: .utf8) { map[url] = text }
-            }
-            return map
-        }.value
-        for index in entries.indices where entries[index].text.isEmpty {
-            guard let text = texts[entries[index].note.fileURL] else { continue }
-            let old = entries[index]
-            entries[index] = Entry(note: old.note, text: text, headings: old.headings,
-                                   tags: old.tags, aliases: old.aliases)
         }
         rebuildAggregates()
     }
@@ -156,39 +125,17 @@ final class CollectionSearchModel {
             .map(\.note)
     }
 
-    /// Notes that mention `note` by title/alias as plain text without linking it.
-    /// `excluding` skips notes that already link it (shown as backlinks instead).
-    func unlinkedMentions(of note: Note, names: [String], excluding: Set<URL>) -> [Note] {
-        entries.compactMap { entry in
-            guard entry.note.fileURL != note.fileURL,
-                  !excluding.contains(entry.note.fileURL),
-                  MentionScanner.containsMention(of: names, in: entry.text) else { return nil }
-            return entry.note
-        }
-    }
-
-    /// The cached text of a note, if indexed (used to derive its aliases, etc.).
-    func text(of note: Note) -> String? {
-        entryByURL[note.fileURL]?.text
-    }
-
     /// The cached aliases of the note at `url` (before any pending save).
     func aliases(of url: URL) -> [String] {
         entryByURL[url]?.aliases ?? []
     }
 
-    /// A `Sendable` snapshot of (note, text) for an off-main mention scan.
-    /// The text is copy-on-write, so this is a cheap reference copy.
-    func mentionCorpus() -> [(Note, String)] {
-        entries.map { ($0.note, $0.text) }
-    }
-
-    /// Replace (or insert) the cached entry for `note` from its in-memory text —
+    /// Replace (or insert) the indexed entry for `note` from its in-memory text —
     /// no disk read. Used to keep the index fresh after a save without
     /// re-reading the whole collection.
     func updateNote(_ note: Note, text: String) {
         let parsed = CollectionIndexCache.parse(text)
-        let entry = Entry(note: note, text: text,
+        let entry = Entry(note: note,
                           headings: parsed.headings,
                           tags: parsed.tags,
                           aliases: parsed.aliases)
@@ -210,21 +157,65 @@ final class CollectionSearchModel {
         return entry.headings.map(\.title)
     }
 
-    /// Notes whose title or body contains `query` (case-insensitive), each with
-    /// a snippet around the first body match.
-    func fullTextResults(query: String) -> [SearchHit] {
+    // MARK: - Search
+
+    /// Notes whose title or alias contains `query` (case-insensitive). Served
+    /// entirely from metadata — instant, no file reads.
+    func titleResults(query: String) -> [SearchHit] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        return entries.compactMap { entry in
+            guard entry.note.title.localizedCaseInsensitiveContains(q)
+                || entry.aliases.contains(where: { $0.localizedCaseInsensitiveContains(q) })
+            else { return nil }
+            return SearchHit(note: entry.note, snippet: "")
+        }
+    }
+
+    /// Notes whose *content* contains `query`, each with a snippet around the
+    /// first match. Reads files off the main actor:
+    /// - `candidates` non-nil (Spotlight already narrowed the set): reads only
+    ///   those files — a handful of reads per query.
+    /// - `candidates` nil: scans every indexed note — the correctness fallback
+    ///   for volumes without a Spotlight index (and the iOS path).
+    func contentResults(query: String, in candidates: [URL]? = nil, limit: Int = 250) async -> [SearchHit] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return [] }
 
-        return entries.compactMap { entry in
-            if let snippet = Self.snippet(of: entry.text, matching: q) {
-                return SearchHit(note: entry.note, snippet: snippet)
-            }
-            if entry.note.title.localizedCaseInsensitiveContains(q) {
-                return SearchHit(note: entry.note, snippet: "")
-            }
-            return nil
+        let noteByURL = Dictionary(entries.map { ($0.note.fileURL, $0.note) },
+                                   uniquingKeysWith: { first, _ in first })
+        let urls: [URL]
+        if let candidates {
+            let indexed = Set(noteByURL.keys)
+            urls = candidates.filter { indexed.contains($0) }
+        } else {
+            urls = entries.map(\.note.fileURL)
         }
+        guard !urls.isEmpty else { return [] }
+
+        let found = await Task.detached(priority: .userInitiated) { () -> [(URL, String)] in
+            var hits: [(URL, String)] = []
+            for url in urls {
+                guard let text = try? String(contentsOf: url, encoding: .utf8),
+                      let snippet = Self.snippet(of: text, matching: q) else { continue }
+                hits.append((url, snippet))
+                if hits.count >= limit { break }
+            }
+            return hits
+        }.value
+
+        return found.compactMap { url, snippet in
+            noteByURL[url].map { SearchHit(note: $0, snippet: snippet) }
+        }
+    }
+
+    /// Title and content hits combined (content snippets win), across the whole
+    /// collection. Convenience for retrieval callers (Ask Library, agent tools)
+    /// that want one correct answer and can afford the on-demand reads.
+    func fullTextResults(query: String) async -> [SearchHit] {
+        let content = await contentResults(query: query)
+        let contentURLs = Set(content.map(\.id))
+        return content + titleResults(query: query).filter { !contentURLs.contains($0.id) }
     }
 
     /// Fuzzy matches over note titles and their headings, best first.
@@ -281,7 +272,7 @@ final class CollectionSearchModel {
         }
     }
 
-    private static func snippet(of text: String, matching query: String, context: Int = 40) -> String? {
+    private nonisolated static func snippet(of text: String, matching query: String, context: Int = 40) -> String? {
         guard let range = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) else {
             return nil
         }

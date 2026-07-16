@@ -212,16 +212,16 @@ final class Collection: Identifiable {
         let root = rootURL
         deriveTask?.cancel()
         deriveTask = Task {
-            let pairs = await Task.detached(priority: .userInitiated) { () -> [(note: Note, record: NoteIndexRecord, freshText: String?)] in
+            let pairs = await Task.detached(priority: .userInitiated) { () -> [(note: Note, record: NoteIndexRecord)] in
                 let cached = force ? [:] : (CollectionIndexCache.load(for: root) ?? [:])
-                var pairs: [(note: Note, record: NoteIndexRecord, freshText: String?)] = []
+                var pairs: [(note: Note, record: NoteIndexRecord)] = []
                 var reparsed = 0
                 for note in noteList {
                     let rel = CollectionIndexCache.relativePath(of: note.fileURL, in: root)
                     if let record = cached[rel], record.matches(note) {
-                        pairs.append((note, record, nil))
+                        pairs.append((note, record))
                     } else if let text = try? String(contentsOf: note.fileURL, encoding: .utf8) {
-                        pairs.append((note, CollectionIndexCache.record(for: note, relativeTo: root, text: text), text))
+                        pairs.append((note, CollectionIndexCache.record(for: note, relativeTo: root, text: text)))
                         reparsed += 1
                     }
                 }
@@ -233,15 +233,9 @@ final class Collection: Identifiable {
             }.value
             guard !Task.isCancelled else { return }
 
-            linkGraph.load(pairs: pairs.map { ($0.note, $0.record) })
+            linkGraph.load(pairs: pairs)
             search.load(pairs: pairs)
             wikiResolver.update(titles: Array(linkGraph.resolution.keys))
-            derivedRevision &+= 1
-
-            // Second wave: stream in note text for full-text search / mention
-            // scanning without holding up the metadata-driven features above.
-            await search.fillMissingTexts()
-            guard !Task.isCancelled else { return }
             derivedRevision &+= 1
         }
     }
