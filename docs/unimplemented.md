@@ -53,14 +53,13 @@
 
 ## 3 · Performance & memory *(2,000-note scale)*
 
-- 🟠 **Every autosave rebuilds all search aggregates O(collection) on the main actor** — the "incremental" save path patches the link graph O(1 note) but then calls `rebuildAggregates()` which recomputes `entryByURL`, tags, the recursive tag tree, link targets, and a `QuickOpenItem` per note + alias + heading across the whole collection (`CollectionSearchModel.swift:136-147,91-101,244-273`) — ~10k+ allocations per save on the UI thread for a 2,000-note vault. `CollectionEmbedProvider.update` also rebuilds `notesByName` O(N) each save. **Fix:** patch aggregates incrementally and/or move the rebuild off-main.
-- 🟠 **Two embed caches are unbounded** — `CollectionEmbedProvider.cache` is never evicted (its `update` bumps a `revision` that's never read but does *not* clear the cache, contradicting its own comment — `CollectionEmbedProvider.swift:21,25`) and `BlockRenderAdapter.cache` has no cap (`BlockRenderAdapter.swift:33,78`). Both hold rendered `NSImage`s keyed by mtime, so every edit to a transcluded/embedded note adds an image that never frees. **Fix:** LRU/count cap like the editor's own caches.
-- 🟠 **Transclusion card render runs on the main actor** — a file read + `lockFocus` per uncached embed (`CollectionEmbedProvider.swift:37-62`, via `BlockRenderAdapter.swift:63`) blocks the UI while rendering.
-- 🟠 **Chat transcript grows unbounded and re-serializes on the main actor each turn** — `save` rewrites the entire `messages` array (with verbatim tool outputs / full note bodies) on every turn (`AssistantModel.swift:106`, `ChatSessionStore.swift:46`); nothing caps or truncates it. **Fix:** true append, or cap/rotate.
-- 🟡 **External-change scan isn't coalesced** — each watcher batch that passes the change filter runs a fresh full directory walk with no in-flight cancellation (`Collection.swift:248`); a bulk `git checkout`/`pull` can trigger several back-to-back walks (the expensive *derive* is coalesced, so impact is bounded).
-- 🟡 **Collections open sequentially at launch** — `Library.restore()` awaits each collection's off-main scan before the next (`Library.swift:134,192`); a saved library of many collections serializes cold-scan latency (single-collection launch is unaffected).
-- 🟡 **Main-actor single-file reads** in `linkMention`/`insertTemplate` (`MacContentView.swift:1061,1102`).
-- 🟡 **`LibraryChatView.retrieve` reads every note per question** (off-main, user-initiated — `LibraryChatView.swift:147`); fine now, revisit for very large vaults.
+*Resolved and moved to [implemented.md §6](implemented.md#6--production-release-hardening): debounced search-aggregate rebuild; bounded `CollectionEmbedProvider`/`BlockRenderAdapter` image caches; bounded + off-main chat-transcript persistence.*
+
+- 🟡 **Transclusion card render runs on the main actor** — a file read + `NoteTranscluder` `lockFocus` per *uncached* `![[Note]]` embed (`CollectionEmbedProvider.swift`) blocks the UI while rendering. Now bounded/cached (so it's rare), but the first render of each card is still main-actor. **Fix:** render to a bitmap off-main (lockFocus is main-only, so this needs a `CGContext`/`NSBitmapImageRep` path).
+- 🟡 **External-change scan isn't coalesced** — each watcher batch that passes the change filter runs a fresh full directory walk with no in-flight cancellation (`Collection.swift`); a bulk `git checkout`/`pull` can trigger several back-to-back walks (the expensive *derive* is already coalesced, so impact is bounded).
+- 🟡 **Collections open sequentially at launch** — `Library.restore()` awaits each collection's off-main scan before the next (`Library.swift`); a saved library of many collections serializes cold-scan latency (single-collection launch is unaffected).
+- 🟡 **Main-actor single-file reads** in `linkMention`/`insertTemplate` (`MacContentView.swift`) — small user-initiated reads, low impact.
+- 🟡 **`LibraryChatView.retrieve` reads every note per question** (off-main, user-initiated); fine now, revisit for very large vaults.
 
 ---
 

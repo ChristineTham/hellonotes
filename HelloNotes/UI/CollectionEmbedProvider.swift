@@ -57,7 +57,12 @@ final class CollectionEmbedProvider: @unchecked Sendable {
         let title = heading.map { "\(base) › \($0)" } ?? base
         guard let image = NoteTranscluder.image(markdown: sectioned, title: title, isDark: isDark) else { return nil }
 
-        lock.lock(); cache[key] = image; lock.unlock()
+        lock.lock()
+        // Keys are mtime-versioned, so an edited note's old cards would otherwise
+        // accumulate forever. Bound the cache (like the editor's own image caches).
+        if cache.count > 64 { cache.removeAll(keepingCapacity: true) }
+        cache[key] = image
+        lock.unlock()
         return image
     }
 

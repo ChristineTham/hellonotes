@@ -37,13 +37,24 @@ final class ChatSessionStore {
         }
     }
 
+    /// The most recent messages kept on disk. Bounds the persisted transcript so
+    /// a long-lived conversation (with verbatim tool outputs) can't grow the file
+    /// without limit. The in-memory session keeps the full history for the run.
+    private static let persistedTailLimit = 1000
+
     func save(_ messages: [LLMMessage]) {
-        let encoder = JSONEncoder()
-        let lines = messages.compactMap { message -> String? in
-            guard let d = try? encoder.encode(message) else { return nil }
-            return String(data: d, encoding: .utf8)
+        let capped = Array(messages.suffix(Self.persistedTailLimit))
+        let url = fileURL
+        // Encode + write off the main actor — the transcript is re-serialized
+        // every turn, and tool outputs make it large.
+        Task.detached(priority: .utility) {
+            let encoder = JSONEncoder()
+            let lines = capped.compactMap { message -> String? in
+                guard let d = try? encoder.encode(message) else { return nil }
+                return String(data: d, encoding: .utf8)
+            }
+            try? lines.joined(separator: "\n").data(using: .utf8)?.write(to: url, options: .atomic)
         }
-        try? lines.joined(separator: "\n").data(using: .utf8)?.write(to: fileURL, options: .atomic)
     }
 
     func clear() {

@@ -144,7 +144,23 @@ final class CollectionSearchModel {
         } else {
             entries.append(entry)
         }
-        rebuildAggregates()
+        // Patch the O(1) lookup immediately (it backs `aliases(of:)` and the
+        // save path), but debounce the O(collection) aggregate rebuild (tags,
+        // tag tree, link targets, quick-open items) so a burst of edits across
+        // notes coalesces into one rebuild instead of one per autosave.
+        entryByURL[note.fileURL] = entry
+        scheduleAggregateRebuild()
+    }
+
+    @ObservationIgnored private var aggregateRebuildTask: Task<Void, Never>?
+
+    private func scheduleAggregateRebuild() {
+        aggregateRebuildTask?.cancel()
+        aggregateRebuildTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            self.rebuildAggregates()
+        }
     }
 
     /// Heading titles of the note named `name` (matched by title or alias),

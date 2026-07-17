@@ -78,6 +78,9 @@ actor BlockRenderAdapter: BlockRenderer {
         if let cached = cache[key] { return cached }
         guard let image = NSImage(contentsOf: url) else { return nil }
         let result = scaled(image, maxWidth: maxWidth) ?? image
+        // Keys are mtime-versioned; bound the cache so edited/embedded images
+        // don't accumulate rendered NSImages for the process lifetime.
+        if cache.count > 64 { cache.removeAll(keepingCapacity: true) }
         cache[key] = result
         return result
     }
