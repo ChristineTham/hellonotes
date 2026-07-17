@@ -17,6 +17,7 @@ import Testing
 import AppKit
 #endif
 @testable import MarkdownEditor
+@testable import MarkdownCore
 @testable import GFMRender
 
 #if canImport(AppKit)
@@ -103,6 +104,70 @@ import AppKit
         }
         #expect(outOfBounds == 0, "\(outOfBounds) out-of-bounds style runs")
         #expect(uncovered.isEmpty, "\(uncovered.count) cmark inline constructs not styled by the live editor")
+    }
+
+    /// The MarkdownCore block classifier that drives the live editor must agree
+    /// with cmark-gfm on every block's *type* across the corpus, so the editor
+    /// renders each block the way the Preview does.
+    static func mdKind(_ kind: BlockKind) -> String? {
+        switch kind {
+        case .heading: "heading"
+        case .paragraph: "paragraph"
+        case .blockquote: "block_quote"
+        case .listItem: "item"
+        case .fencedCode, .indentedCode: "code_block"
+        case .table: "table"
+        case .thematicBreak: "thematic_break"
+        case .frontMatter, .mathBlock, .blank: nil   // not GFM constructs
+        }
+    }
+    // cmark block types that map onto a MarkdownCore block type.
+    static func cmarkBlock(_ kind: String) -> String? {
+        switch kind {
+        case "heading", "paragraph", "block_quote", "code_block", "table", "thematic_break": kind
+        case "item": "item"
+        case "html_block": "paragraph"   // MarkdownCore has no HTML block; renders as text
+        default: nil                     // list container, list, document, inline…
+        }
+    }
+
+    @Test func blockClassificationMatchesCmark() throws {
+        let examples = try Self.examples()
+        var mismatches: [(Int, String, String, String)] = []   // ex, text, cmark, md
+        var checked = 0
+
+        for ex in examples {
+            let ns = ex.markdown as NSString
+            let blocks = BlockParser.fullParse(ns).blocks
+            func mdKindAt(_ loc: Int) -> String? {
+                for b in blocks where b.range.location <= loc && loc < b.range.location + b.range.length {
+                    return Self.mdKind(b.kind)
+                }
+                return nil
+            }
+            for node in GFMRenderer.nodes(ex.markdown) where node.depth <= 1 {
+                guard let want = Self.cmarkBlock(node.kind) else { continue }
+                // Skip list *items* — MarkdownCore models items as blocks and
+                // cmark as list>item; the item-vs-paragraph mapping is exercised
+                // by the item nodes themselves.
+                checked += 1
+                let got = mdKindAt(node.range.location)
+                // A cmark list `item` maps to MarkdownCore `.listItem`; a cmark
+                // `paragraph` inside an item is also inside a `.listItem` block.
+                let ok: Bool
+                if want == "item" || node.kind == "paragraph" {
+                    ok = got == want || got == "item" || got == "paragraph"
+                } else {
+                    ok = got == want
+                }
+                if !ok { mismatches.append((ex.number, ns.substring(with: node.range).prefix(40).description, want, got ?? "nil")) }
+            }
+        }
+        print("block classification vs cmark: \(checked - mismatches.count)/\(checked) blocks agree")
+        for (n, t, c, m) in mismatches.prefix(25) { print("  ex \(n): cmark=\(c) md=\(m)  \(t.debugDescription)") }
+        // Allow a small tail of genuine model differences (HTML blocks, loose
+        // list edge cases); the vast majority must agree.
+        #expect(mismatches.count <= checked / 20, "\(mismatches.count)/\(checked) block-type divergences from cmark")
     }
 }
 #endif

@@ -155,6 +155,10 @@ public enum StyleSpec {
             }
             return []
 
+        case .indentedCode:
+            runs.append(StyleRun(range: trimmedBlockRange(block, text: text), role: .codeBlock))
+            return []
+
         case .mathBlock:
             runs.append(StyleRun(range: trimmedBlockRange(block, text: text), role: .mathSource))
             return []

@@ -402,6 +402,7 @@ private struct BlockBuilder {
         case quote(fromLine: Int, callout: String?)
         case list(fromLine: Int, info: ListInfo)
         case table(fromLine: Int, sawDelimiter: Bool)
+        case indentedCode(fromLine: Int)
         case blank(fromLine: Int)
     }
     private var open: Open = .none
@@ -442,6 +443,9 @@ private struct BlockBuilder {
 
         switch info.kind {
         case .blank:
+            // A blank line stays inside an open indented code block (chunks may
+            // be blank-separated); it ends anything else.
+            if case .indentedCode = open { return line + 1 }
             closeOpen(through: line - 1)
             if case .blank(let from) = open {
                 open = .blank(fromLine: from)      // extend the run
@@ -510,20 +514,26 @@ private struct BlockBuilder {
             switch open {
             case .paragraph:
                 break                               // continue the paragraph
+                                                    // (indented code can't interrupt it)
+            case .indentedCode(let from):
+                if info.indent >= 4 {
+                    open = .indentedCode(fromLine: from)   // continue the code block
+                } else {
+                    closeOpen(through: line - 1)
+                    open = .paragraph(fromLine: line)
+                }
             case .list(let from, let listInfo):
                 // Indented lines continue the item; anything else ends it.
                 if info.indent > listInfo.indent {
                     open = .list(fromLine: from, info: listInfo)
                 } else {
                     closeOpen(through: line - 1)
-                    open = .paragraph(fromLine: line)
+                    open = info.indent >= 4 ? .indentedCode(fromLine: line) : .paragraph(fromLine: line)
                 }
-            case .table:
+            default:   // .none, .blank, .table
                 closeOpen(through: line - 1)
-                open = .paragraph(fromLine: line)
-            default:
-                closeOpen(through: line - 1)
-                open = .paragraph(fromLine: line)
+                // 4-space / tab indent with no paragraph to continue = code.
+                open = info.indent >= 4 ? .indentedCode(fromLine: line) : .paragraph(fromLine: line)
             }
             return line + 1
 
@@ -577,6 +587,8 @@ private struct BlockBuilder {
             blocks.append(make(.listItem(info), from, line))
         case .table(let from, let sawDelimiter):
             blocks.append(make(sawDelimiter ? .table : .paragraph, from, line))
+        case .indentedCode(let from):
+            blocks.append(make(.indentedCode, from, line))
         case .blank(let from):
             blocks.append(make(.blank, from, line))
         }

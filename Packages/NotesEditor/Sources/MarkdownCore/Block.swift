@@ -38,6 +38,8 @@ public enum BlockKind: Sendable, Equatable {
     case heading(level: Int, setext: Bool)
     /// ``` / ~~~ fence, open line through close line (or EOF when unclosed).
     case fencedCode(info: String, closed: Bool)
+    /// A run of 4-space (or tab) indented lines forming a code block.
+    case indentedCode
     /// `$$` display-math fence.
     case mathBlock(closed: Bool)
     /// A run of consecutive `>` lines. `callout` holds the `[!type]` when
@@ -73,7 +75,7 @@ public struct Block: Sendable, Equatable {
     public var hasInlineContent: Bool {
         switch kind {
         case .paragraph, .heading, .blockquote, .listItem, .table: true
-        case .fencedCode, .mathBlock, .thematicBreak, .frontMatter, .blank: false
+        case .fencedCode, .indentedCode, .mathBlock, .thematicBreak, .frontMatter, .blank: false
         }
     }
 }

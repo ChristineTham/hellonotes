@@ -82,7 +82,7 @@ nonisolated enum StyleApplier {
 
     private static func overlayGFM(_ kind: BlockKind) -> Bool {
         switch kind {
-        case .fencedCode, .mathBlock, .frontMatter, .thematicBreak, .blank: false
+        case .fencedCode, .indentedCode, .mathBlock, .frontMatter, .thematicBreak, .blank: false
         default: true
         }
     }
