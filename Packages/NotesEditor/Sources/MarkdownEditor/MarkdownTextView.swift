@@ -125,7 +125,21 @@ public final class MarkdownTextView: NSTextView {
         let end = contentManager.offset(from: contentManager.documentRange.location, to: viewport.endLocation)
         let margin = 8_000
         let range = NSRange(location: max(0, start - margin), length: (end - start) + 2 * margin)
-        document.ensureStyled(charactersIn: range)
+        guard let styled = document.ensureStyled(charactersIn: range) else { return }
+        // Concealment shrinks a run's font; force TextKit 2 to re-lay-out the
+        // freshly-styled span so collapsed markers don't keep their old width.
+        invalidateLayout(charactersIn: styled)
+    }
+
+    /// Invalidate TextKit 2 layout for a character range (attribute-only
+    /// styling doesn't trigger this on its own).
+    private func invalidateLayout(charactersIn range: NSRange) {
+        guard let tlm = textLayoutManager,
+              let cm = tlm.textContentManager,
+              let start = cm.location(cm.documentRange.location, offsetBy: range.location),
+              let end = cm.location(start, offsetBy: range.length),
+              let textRange = NSTextRange(location: start, end: end) else { return }
+        tlm.invalidateLayout(for: textRange)
     }
 
     private(set) weak var document: EditorDocument?
@@ -134,17 +148,22 @@ public final class MarkdownTextView: NSTextView {
 
     func bind(to document: EditorDocument) {
         self.document = document
-        // Attach the document's storage to this view's TextKit 2 stack.
-        if let contentStorage = textContentStorage {
-            contentStorage.textStorage = document.storage
-        }
-        // Custom fragments draw inline-rendered block embeds (images…).
-        textLayoutManager?.delegate = blockLayoutDelegate
+        // Default font/typing attributes MUST be set before the storage is
+        // attached: setting `font` applies it to the entire text storage,
+        // which would clobber the per-run concealed (0.1pt) fonts already in
+        // the document's storage — leaving concealed markers invisible but
+        // still occupying their full width.
         font = document.theme.body
         typingAttributes = [
             .font: document.theme.body,
             .foregroundColor: document.theme.text,
         ]
+        // Custom fragments draw inline-rendered block embeds (images…).
+        textLayoutManager?.delegate = blockLayoutDelegate
+        // Attach the document's storage to this view's TextKit 2 stack.
+        if let contentStorage = textContentStorage {
+            contentStorage.textStorage = document.storage
+        }
         syncRenderMetrics()
     }
 

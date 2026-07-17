@@ -10,6 +10,9 @@
 
 import Foundation
 import Testing
+#if canImport(AppKit)
+import AppKit
+#endif
 @testable import MarkdownEditor
 @testable import MarkdownCore
 
@@ -110,6 +113,74 @@ import Testing
         attrs = ns.attributes(at: markerAt, effectiveRange: nil)
         #expect((attrs[.font] as? PlatformFont)?.pointSize != 0.1)
     }
+
+    /// A callout header's `> [!type]` prefix collapses to the concealed font
+    /// (so the title starts at the block indent, aligned with the body) when
+    /// the caret is elsewhere, and reveals when the caret is inside.
+    @Test func calloutHeaderPrefixConceals() {
+        let text = "# Callouts\n\n> [!note] A note callout\n> Body line one.\n\nEnd.\n"
+        let document = EditorDocument(text: text)
+        document.selectionDidChange(NSRange(location: 0, length: 0)) // caret away
+        let ns = document.storage
+        let s = text as NSString
+        let prefixLoc = s.range(of: "> [!note] ").location
+
+        // Whole `> [!note] ` prefix is concealed → near-zero rendered width.
+        for off in 0..<10 {
+            let f = ns.attribute(.font, at: prefixLoc + off, effectiveRange: nil) as? PlatformFont
+            #expect(f?.pointSize == 0.1, "prefix char \(off) not concealed")
+        }
+        let prefixWidth = ns.attributedSubstring(from: NSRange(location: prefixLoc, length: 10)).size().width
+        #expect(prefixWidth < 2, "concealed prefix should collapse, got \(prefixWidth)")
+
+        // Caret inside the header reveals the prefix.
+        document.selectionDidChange(NSRange(location: prefixLoc + 3, length: 0))
+        let revealed = ns.attribute(.font, at: prefixLoc, effectiveRange: nil) as? PlatformFont
+        #expect(revealed?.pointSize != 0.1)
+    }
+
+    #if canImport(AppKit)
+    /// Reproduce the LIVE TextKit 2 layout (not NSAttributedString.size) and
+    /// assert the header title lands at the same x as the body — i.e. the
+    /// concealed prefix truly collapses under real layout.
+    @Test func calloutTitleAlignsWithBodyUnderTextKit2() {
+        let text = "# Callouts\n\n> [!note] A note callout\n> Body line one.\n\nEnd.\n"
+        let document = EditorDocument(text: text)
+        document.selectionDidChange(NSRange(location: 0, length: 0))
+        let s = text as NSString
+
+        // Reproduce the live view's binding order: set the default font
+        // BEFORE attaching the styled storage, so it can't clobber the
+        // per-run concealed fonts.
+        let tv = NSTextView(usingTextLayoutManager: true)
+        tv.font = document.theme.body
+        (tv.textLayoutManager?.textContentManager as? NSTextContentStorage)?.textStorage = document.storage
+        let layout = tv.textLayoutManager!
+        let content = layout.textContentManager as! NSTextContentStorage
+        layout.textContainer?.lineFragmentPadding = 5
+        layout.textContainer?.size = CGSize(width: 600, height: 1e6)
+        layout.ensureLayout(for: layout.documentRange)
+
+        func x(ofCharAt loc: Int) -> CGFloat {
+            guard let pos = content.location(content.documentRange.location, offsetBy: loc),
+                  let frag = layout.textLayoutFragment(for: pos) else { return -1 }
+            for line in frag.textLineFragments {
+                let r = line.characterRange
+                let start = content.offset(from: content.documentRange.location, to: frag.rangeInElement.location) + r.location
+                if loc >= start && loc < start + r.length {
+                    let cg = line.locationForCharacter(at: loc - start)
+                    return frag.layoutFragmentFrame.origin.x + line.typographicBounds.origin.x + cg.x
+                }
+            }
+            return frag.layoutFragmentFrame.origin.x
+        }
+
+        let titleX = x(ofCharAt: s.range(of: "A note callout").location)
+        let bodyX = x(ofCharAt: s.range(of: "Body line one").location)
+        print("TextKit2 titleX=\(titleX) bodyX=\(bodyX)")
+        #expect(abs(titleX - bodyX) < 4, "title x \(titleX) should align with body x \(bodyX)")
+    }
+    #endif
 
     // MARK: - Code highlighting
 

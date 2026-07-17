@@ -165,13 +165,37 @@ public enum StyleSpec {
                     if i < end, text.character(at: i) == 0x20 { i += 1 }
                 }
                 let markerRange = NSRange(location: line.location, length: i - line.location)
-                if markerRange.length > 0 {
-                    runs.append(StyleRun(range: markerRange, role: .marker))
-                }
                 let content = NSRange(location: i, length: end - i)
                 if lineNo == first, let callout {
-                    runs.append(StyleRun(range: content, role: .calloutTitle(type: callout)))
+                    // Header: conceal `> [!type]` (the marker + bracketed type)
+                    // so only the icon + title show; reveals for editing.
+                    var titleStart = i
+                    if i < end, text.character(at: i) == 0x5B { // '['
+                        var j = i
+                        while j < end, text.character(at: j) != 0x5D { j += 1 }
+                        if j < end { j += 1 }                    // past ']'
+                        while j < end, text.character(at: j) == 0x20 { j += 1 }
+                        titleStart = j
+                    }
+                    let prefix = NSRange(location: line.location, length: titleStart - line.location)
+                    if prefix.length > 0 {
+                        runs.append(StyleRun(range: prefix, role: .marker, concealment: .whenInactive))
+                    }
+                    let title = NSRange(location: titleStart, length: end - titleStart)
+                    if title.length > 0 {
+                        runs.append(StyleRun(range: title, role: .calloutTitle(type: callout)))
+                    }
+                } else if callout != nil {
+                    // Body line: conceal just the `>` marker.
+                    if markerRange.length > 0 {
+                        runs.append(StyleRun(range: markerRange, role: .marker, concealment: .whenInactive))
+                    }
+                    runs.append(StyleRun(range: content, role: .quote))
+                    spans.append(content)
                 } else {
+                    if markerRange.length > 0 {
+                        runs.append(StyleRun(range: markerRange, role: .marker))
+                    }
                     runs.append(StyleRun(range: content, role: .quote))
                     spans.append(content)
                 }

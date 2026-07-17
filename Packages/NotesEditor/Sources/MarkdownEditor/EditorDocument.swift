@@ -182,18 +182,30 @@ public final class EditorDocument {
     /// Style every not-yet-styled block intersecting `range`. The view
     /// calls this as content scrolls into view; the background pass calls
     /// it batch by batch. Idempotent and cheap on styled regions.
-    public func ensureStyled(charactersIn range: NSRange) {
-        guard !parse.blocks.isEmpty else { return }
+    /// Style any not-yet-styled blocks intersecting `range`. Returns the
+    /// character range actually restyled (nil if nothing was pending) so the
+    /// caller can invalidate TextKit 2 layout for it: concealment changes a
+    /// run's font size, and an attribute-only edit does not force a re-layout
+    /// of a fragment TextKit already laid out at the body font — without the
+    /// invalidation a first-seen concealed marker stays full-width (invisible
+    /// but occupying space) until some later edit happens to re-lay it out.
+    @discardableResult
+    public func ensureStyled(charactersIn range: NSRange) -> NSRange? {
+        guard !parse.blocks.isEmpty else { return nil }
         guard let lo = parse.blockIndex(at: max(0, min(range.location, storage.length))),
               let hi = parse.blockIndex(at: max(0, min(range.location + range.length, storage.length)))
-        else { return }
+        else { return nil }
         var pending: [Int] = []
         for i in lo...hi where !(styledBlocks.indices.contains(i) && styledBlocks[i]) {
             pending.append(i)
         }
-        guard !pending.isEmpty else { return }
+        guard !pending.isEmpty else { return nil }
         restyle(blockIndices: Set(pending), revealed: revealedBlocks)
         for i in pending where styledBlocks.indices.contains(i) { styledBlocks[i] = true }
+        let lowBlock = parse.blocks[pending.min()!].range
+        let highBlock = parse.blocks[pending.max()!].range
+        return NSRange(location: lowBlock.location,
+                       length: highBlock.location + highBlock.length - lowBlock.location)
     }
 
     /// Walk the document once in idle-time batches until everything is
