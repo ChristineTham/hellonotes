@@ -36,7 +36,8 @@ nonisolated enum StyleApplier {
         to target: NSMutableAttributedString,
         theme: EditorTheme,
         revealed: Set<Int>,
-        resolveWiki: WikiResolver?
+        resolveWiki: WikiResolver?,
+        gfmRuns: [StyleRun] = []
     ) {
         target.beginEditing()
         for index in blockIndices where index >= 0 && index < parse.blocks.count {
@@ -51,16 +52,20 @@ nonisolated enum StyleApplier {
             }
             // Overlay spec-accurate GFM inline styling from cmark-gfm — the same
             // engine the Preview renders with — so emphasis/links/code match the
-            // spec exactly. Additive (cmark only emits runs for GFM constructs),
-            // so the Obsidian extensions styled above are untouched. Skip code /
-            // math blocks (their content isn't inline Markdown).
-            if text.length < gfmOverlayMaxLength, overlayGFM(block.kind) {
-                let sub = text.substring(with: block.range) as NSString
-                for run in GFMLiveStyle.runs(sub) {
-                    let shifted = StyleRun(
-                        range: NSRange(location: block.range.location + run.range.location, length: run.range.length),
-                        role: run.role, concealment: run.concealment)
-                    apply(shifted, to: target, theme: theme, revealed: isRevealed, resolveWiki: resolveWiki)
+            // spec exactly across paragraphs, headings, lists AND blockquotes.
+            // `gfmRuns` are whole-document runs (cmark had full block context, so
+            // a `    - x` list item is read as a list item, not indented code —
+            // the isolation bug a per-block parse would hit). Additive: cmark
+            // only emits runs for GFM inline constructs, so the Obsidian
+            // extensions and structural styling above are untouched. Skip code /
+            // math blocks (their content is literal, not inline Markdown, and
+            // fenced code carries syntax-highlight colours we must not disturb).
+            if overlayGFM(block.kind) {
+                let blockEnd = block.range.location + block.range.length
+                for run in gfmRuns
+                where run.range.location >= block.range.location
+                   && run.range.location + run.range.length <= blockEnd {
+                    apply(run, to: target, theme: theme, revealed: isRevealed, resolveWiki: resolveWiki)
                 }
             }
             // Plain-blockquote gutter bars are per-line (nesting depth); only
@@ -74,20 +79,19 @@ nonisolated enum StyleApplier {
 
     /// Whether to overlay cmark GFM inline styling on this block. Code and math
     /// blocks are literal content (no inline Markdown); fenced code also carries
-    /// syntax-highlight colours we must not disturb.
-    /// Above this document length the per-block cmark overlay is skipped to keep
-    /// keystrokes sub-frame — the fast StyleSpec path handles pathological
-    /// multi-MB notes (well beyond any hand-written note).
+    /// syntax-highlight colours we must not disturb. Everything with inline
+    /// Markdown — paragraphs, headings, list items, blockquotes, tables — gets
+    /// the cmark overlay, because the runs come from a whole-document parse that
+    /// has full block context (no per-block isolation misreads).
     static let gfmOverlayMaxLength = 200_000
 
     private static func overlayGFM(_ kind: BlockKind) -> Bool {
-        // Only paragraphs and headings: their text has no structural leading
-        // indent, so cmark reading the block in isolation can't misread it (a
-        // `    - x` list item read alone looks like indented code). List /
-        // blockquote inline is handled by StyleSpec, which has block context.
         switch kind {
-        case .paragraph, .heading: true
-        default: false
+        case .paragraph, .heading, .listItem, .blockquote: true
+        // Tables render as native image fragments; changing the underlying
+        // text's fonts would perturb the fragment's line metrics. Code / math /
+        // front-matter are literal content, not inline Markdown.
+        case .table, .fencedCode, .indentedCode, .mathBlock, .frontMatter, .thematicBreak, .blank: false
         }
     }
 

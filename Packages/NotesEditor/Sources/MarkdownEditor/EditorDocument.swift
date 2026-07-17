@@ -483,6 +483,23 @@ public final class EditorDocument {
 
     // MARK: - Restyle
 
+    /// Whole-document cmark-gfm inline style runs, cached per `revision` so pure
+    /// caret moves (which restyle without editing) don't re-parse. cmark isn't
+    /// incremental, so this is one whole-document parse per edit — measured at
+    /// ~4.7 ms for a 200 KB note, comfortably sub-frame; above the size gate the
+    /// overlay is skipped and StyleSpec alone styles inline.
+    @ObservationIgnored private var gfmRunsCache: [StyleRun] = []
+    @ObservationIgnored private var gfmRunsCacheRevision = -1
+
+    private func currentGFMRuns() -> [StyleRun] {
+        guard revision != gfmRunsCacheRevision else { return gfmRunsCache }
+        gfmRunsCacheRevision = revision
+        let ns: NSString = storage.mutableString
+        gfmRunsCache = ns.length < StyleApplier.gfmOverlayMaxLength
+            ? GFMLiveStyle.runs(ns) : []
+        return gfmRunsCache
+    }
+
     private func restyle(blockIndices: Set<Int>, revealed: Set<Int>) {
         guard !blockIndices.isEmpty else { return }
         isApplyingStyles = true
@@ -493,7 +510,8 @@ public final class EditorDocument {
             to: storage,
             theme: theme,
             revealed: revealed,
-            resolveWiki: services.wikiLinkExists
+            resolveWiki: services.wikiLinkExists,
+            gfmRuns: currentGFMRuns()
         )
         isApplyingStyles = false
         if services.codeHighlighter != nil {
