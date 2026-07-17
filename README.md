@@ -9,7 +9,7 @@ HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps li
 |---|---|
 | [docs/PRD.md](docs/PRD.md) | Product vision, users, feature requirements, success metrics |
 | [docs/architecture.md](docs/architecture.md) | Current 4-layer architecture + the Swift packages the app links |
-| [docs/unimplemented.md](docs/unimplemented.md) | Deferred / not-yet-built items, with reasons and what would unblock each |
+| [docs/unimplemented.md](docs/unimplemented.md) | Production-readiness register — release blockers, deferrals, bugs, tech debt, security, performance, usability & accessibility gaps (from a five-lane audit) |
 | [docs/native-roadmap.md](docs/native-roadmap.md) | Forward roadmap for deeper Apple-platform integration (App Intents, widgets, Spotlight…) |
 | [docs/production.md](docs/production.md) | Step-by-step runbook to ship the app to the Mac App Store |
 | [docs/implemented.md](docs/implemented.md) | Implementation history — the milestone build sequence, the editor rewrite, the retired markdown-engine fork, and the GFM-fidelity work |
