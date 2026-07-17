@@ -74,6 +74,10 @@ struct NoteEditorView: View {
     /// The intelligence service for the user's chosen provider.
     private var intelligence: IntelligenceService { IntelligenceService(settings: llmSettings) }
 
+    /// Opt-in to the in-repo editor engine while it reaches parity with the
+    /// forked one (Settings → General → Editor; docs/editor-rewrite.md).
+    @AppStorage("useNewEditorBeta") private var useNewEditor = false
+
     @State private var showMermaid = false
     @State private var showSlides = false
     @State private var showOutline = false
@@ -375,34 +379,46 @@ struct NoteEditorView: View {
             Divider()
         }
 
-        NativeTextViewWrapper(
-            text: $editor.text,
-            pendingInlineReplacement: $pendingReplacement,
-            configuration: configuration,
-            fontSize: appearance.editorFontSize,
-            documentId: editor.note?.fileURL.path ?? "default",
-            onPasteImage: pasteImage,
-            onSmartPaste: smartPaste,
-            onLinkClick: onOpenWikiLink,
-            onCaretRectChange: { caretRect = $0 },
-            onInlineSelectionChange: { newValue in
-                // The engine reports nil on every caret move through plain
-                // text. InlineSelectionState isn't Equatable, so writing nil
-                // over nil would still re-evaluate this whole view once per
-                // caret move — skip the no-op writes.
-                if inlineSelection != nil || newValue != nil {
-                    inlineSelection = newValue
+        if useNewEditor {
+            // The in-repo engine (docs/editor-rewrite.md), opt-in while it
+            // works toward parity with the fork.
+            NewEditorHost(
+                editor: editor,
+                linkCandidates: linkCandidates,
+                fontSize: appearance.editorFontSize,
+                accent: appearance.editorAccentNSColor,
+                onOpenWikiLink: onOpenWikiLink
+            )
+        } else {
+            NativeTextViewWrapper(
+                text: $editor.text,
+                pendingInlineReplacement: $pendingReplacement,
+                configuration: configuration,
+                fontSize: appearance.editorFontSize,
+                documentId: editor.note?.fileURL.path ?? "default",
+                onPasteImage: pasteImage,
+                onSmartPaste: smartPaste,
+                onLinkClick: onOpenWikiLink,
+                onCaretRectChange: { caretRect = $0 },
+                onInlineSelectionChange: { newValue in
+                    // The engine reports nil on every caret move through plain
+                    // text. InlineSelectionState isn't Equatable, so writing nil
+                    // over nil would still re-evaluate this whole view once per
+                    // caret move — skip the no-op writes.
+                    if inlineSelection != nil || newValue != nil {
+                        inlineSelection = newValue
+                    }
                 }
-            }
-        )
-        .overlay(alignment: .topLeading) {
-            let matches = activeCompletions
-            if !matches.isEmpty {
-                WikiLinkCompletionList(matches: matches, onSelect: acceptCompletion)
-                    .offset(
-                        x: max(4, caretRect.minX),
-                        y: caretRect.maxY + 2
-                    )
+            )
+            .overlay(alignment: .topLeading) {
+                let matches = activeCompletions
+                if !matches.isEmpty {
+                    WikiLinkCompletionList(matches: matches, onSelect: acceptCompletion)
+                        .offset(
+                            x: max(4, caretRect.minX),
+                            y: caretRect.maxY + 2
+                        )
+                }
             }
         }
 

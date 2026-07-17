@@ -36,5 +36,10 @@ let package = Package(
             dependencies: ["MarkdownCore"],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
+        .testTarget(
+            name: "MarkdownEditorTests",
+            dependencies: ["MarkdownEditor"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
     ]
 )

@@ -74,16 +74,21 @@ Packages/NotesEditor
 
 ### Text pipeline
 
-- **Open:** off-main — parse all blocks, build the fully styled
-  `NSAttributedString`, install once. Scrolling afterwards is *pure TextKit 2
-  lazy layout*: zero styling work on the scroll path. (Budget: 1 MB < 300 ms
-  off-main; text appears when styled — measured, not assumed.) This also
-  sidesteps a doc-verified constraint: a standard `NSTextView`'s
-  `NSTextViewportLayoutController.delegate` is owned by the view itself on
-  our OS floor (framework views only gain overridable viewport hooks in
-  Apple's post-26 releases), so viewport-driven lazy *styling* isn't
-  available anyway — pre-styled storage plus lazy *layout* is the reliable
-  path, and the 2027 hooks slot in behind the same seam later.
+- **Open:** parse everything (3.8 MB ≈ 12 ms), install *plain* text, style
+  the first screens synchronously — open is effectively instant at any note
+  size (measured: 48 ms for 3.8 MB). The rest styles progressively: an
+  idle-time walker works forward in ~250-block batches, and a scroll
+  observer styles whatever enters the viewport (± margin) on demand.
+  *Why not pre-style off-main and install once?* Measured dead end:
+  `setAttributedString` imports attribute runs lazily and NSTextStorage
+  converts each region on first mutation — ~100 ms stalls landing on the
+  user's first keystroke into a fresh region of a multi-MB note. Batched
+  native-path styling settles those structures as it walks; a final
+  net-zero synthetic edit absorbs the one remaining first-edit cost. (A
+  standard `NSTextView`'s viewport delegate also can't be replaced on our
+  OS floor — framework views gain overridable viewport hooks only in
+  Apple's post-26 releases — so the scroll observer uses
+  `boundsDidChangeNotification` + `viewportRange`, no delegate takeover.)
 - **Keystroke:** splice `LineIndex` → re-parse damaged block neighborhood
   (stable boundaries: blank lines / fence edges) → restyle only those blocks.
   Budget: < 2 ms.

@@ -37,6 +37,17 @@ final class EditorModel {
     /// watcher) and patch its index from memory without re-reading the vault.
     var onSaved: (@MainActor (URL, String) -> Void)?
 
+    /// Called at the start of every flush, before the buffer is persisted.
+    /// The new-editor host uses this to push its document's latest text into
+    /// `text` first, so a flush on note switch / quit never saves a snapshot
+    /// that trails the editor by a debounce interval.
+    var willFlush: (@MainActor () -> Void)?
+
+    /// Increments whenever the buffer is *loaded* (note open, external
+    /// reload, conflict resolution) — never on ordinary saves. Editors that
+    /// own their own buffer key their rebuild on this.
+    private(set) var loadRevision = 0
+
     /// The external on-disk version captured when a conflict was detected.
     private var conflictDiskText: String?
 
@@ -86,6 +97,7 @@ final class EditorModel {
     /// Cancel the pending debounce and persist immediately. Call on note
     /// switch, window resignation, and app termination.
     func flush() async {
+        willFlush?()
         saveTask?.cancel()
         saveTask = nil
         await save()
@@ -162,6 +174,7 @@ final class EditorModel {
         isReplacingText = true
         text = newValue
         isReplacingText = false
+        loadRevision += 1
     }
 
     private func scheduleSave() {
