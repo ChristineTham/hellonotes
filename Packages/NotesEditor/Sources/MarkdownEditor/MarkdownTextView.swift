@@ -54,8 +54,10 @@ public final class EditorProxy {
 
 public final class MarkdownTextView: NSTextView {
 
-    /// Build the full scroll-view + TextKit 2 text-view assembly.
-    static func scrollableEditor(document: EditorDocument) -> (NSScrollView, MarkdownTextView) {
+    /// Build the full scroll-view + TextKit 2 text-view assembly. Public so
+    /// hosts (and offscreen fidelity-snapshot tests) can embed the exact same
+    /// view the representable builds.
+    public static func scrollableEditor(document: EditorDocument) -> (NSScrollView, MarkdownTextView) {
         let textView = MarkdownTextView(usingTextLayoutManager: true)
         textView.bind(to: document)
 
