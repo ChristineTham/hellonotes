@@ -49,6 +49,11 @@ nonisolated enum StyleApplier {
             for run in runs {
                 apply(run, to: target, theme: theme, revealed: isRevealed, resolveWiki: resolveWiki)
             }
+            // Plain-blockquote gutter bars are per-line (nesting depth); only
+            // when concealed — editing reveals the raw `>` at natural indent.
+            if !isRevealed {
+                applyQuoteBars(for: block, lines: parse.lines, text: text, to: target, theme: theme)
+            }
         }
         target.endEditing()
     }
@@ -65,33 +70,67 @@ nonisolated enum StyleApplier {
         }
         target.setAttributes(base, range: block.range)
 
-        // Callout chrome: tint every line so the fragment can paint the band
-        // and gutter bar; put the icon on the header line; indent the text so
-        // it clears the bar + icon.
-        if case .blockquote(let callout) = block.kind {
+        // Obsidian callout chrome: tinted band + gutter bar + header icon.
+        // (Plain blockquotes are handled per-line in `applyQuoteBars` so they
+        // can nest.)
+        if case .blockquote(let callout?) = block.kind {
+            let (tint, icon) = calloutStyle(for: callout, theme: theme)
+            target.addAttribute(calloutTintAttribute, value: tint, range: block.range)
             let indent = NSMutableParagraphStyle()
-            if let callout {
-                // Obsidian callout: tinted band + gutter bar + header icon.
-                let (tint, icon) = calloutStyle(for: callout, theme: theme)
-                target.addAttribute(calloutTintAttribute, value: tint, range: block.range)
-                indent.headIndent = 24
-                indent.firstLineHeadIndent = 24
-                let header = NSRange(location: block.range.location,
-                                     length: min(1, block.range.length))
-                if header.length > 0 {
-                    target.addAttribute(calloutIconAttribute, value: icon, range: header)
-                }
-            } else {
-                // Plain blockquote: neutral gutter bar only (GitHub-style),
-                // gray text (the `.quote` role handles color).
-                target.addAttribute(calloutTintAttribute, value: theme.secondary, range: block.range)
-                target.addAttribute(blockquotePlainAttribute, value: true, range: block.range)
-                indent.headIndent = 16
-                indent.firstLineHeadIndent = 16
-            }
+            indent.headIndent = 24
+            indent.firstLineHeadIndent = 24
             target.addAttribute(.paragraphStyle, value: indent, range: block.range)
+            let header = NSRange(location: block.range.location, length: min(1, block.range.length))
+            if header.length > 0 {
+                target.addAttribute(calloutIconAttribute, value: icon, range: header)
+            }
+        }
+
+        // List items indent by nesting depth (GitHub-deep), with a hanging
+        // indent so wrapped/continuation lines align under the content.
+        if case .listItem(let info) = block.kind {
+            let bullet = 14 + CGFloat(info.indent) * 13
+            let para = NSMutableParagraphStyle()
+            para.firstLineHeadIndent = bullet
+            para.headIndent = bullet + 15
+            target.addAttribute(.paragraphStyle, value: para, range: block.range)
         }
     }
+
+    /// Per-line gutter bars for a plain (non-callout) blockquote — one bar per
+    /// `>` nesting level, with the text indented to clear them. Called from
+    /// the main loop, which has the line index.
+    static func applyQuoteBars(
+        for block: Block, lines: LineIndex, text: NSString,
+        to target: NSMutableAttributedString, theme: EditorTheme
+    ) {
+        guard case .blockquote(nil) = block.kind else { return }
+        let first = block.firstLine, last = block.firstLine + block.lineCount - 1
+        for lineNo in first...last {
+            let line = lines.contentRange(lineNo, in: text)
+            // Count `>` markers on this line = nesting depth.
+            var i = line.location
+            let end = line.location + line.length
+            var depth = 0
+            while i < end, text.character(at: i) == 0x20 { i += 1 }
+            while i < end, text.character(at: i) == 0x3E {   // '>'
+                depth += 1; i += 1
+                if i < end, text.character(at: i) == 0x20 { i += 1 }
+            }
+            guard depth > 0 else { continue }
+            let lineRange = lines.lineRange(lineNo)
+            target.addAttribute(calloutTintAttribute, value: theme.secondary, range: lineRange)
+            target.addAttribute(blockquotePlainAttribute, value: depth, range: lineRange)
+            let para = NSMutableParagraphStyle()
+            let inset = CGFloat(depth) * Self.quoteBarStep + 8
+            para.firstLineHeadIndent = inset
+            para.headIndent = inset
+            target.addAttribute(.paragraphStyle, value: para, range: lineRange)
+        }
+    }
+
+    /// Horizontal distance between successive nested blockquote bars.
+    static let quoteBarStep: CGFloat = 12
 
     /// Obsidian-style callout tint + SF Symbol per `[!type]`.
     static func calloutStyle(for type: String, theme: EditorTheme) -> (PlatformColor, String) {

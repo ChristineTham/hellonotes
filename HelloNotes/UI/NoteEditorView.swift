@@ -128,8 +128,8 @@ struct NoteEditorView: View {
                 // card (main-actor: it uses lockFocus).
                 await MainActor.run { embed.image(forName: target) }
             },
-            renderTable: { source, maxWidth, isDark in
-                await MainActor.run { TableImageRenderer.image(source: source, maxWidth: maxWidth, isDark: isDark) }
+            renderTable: { [fontSize = appearance.editorFontSize] source, maxWidth, isDark in
+                await MainActor.run { TableImageRenderer.image(source: source, maxWidth: maxWidth, fontSize: fontSize, isDark: isDark) }
             },
             renderInlineMath: { latex, fontSize, isDark in
                 await MainActor.run {

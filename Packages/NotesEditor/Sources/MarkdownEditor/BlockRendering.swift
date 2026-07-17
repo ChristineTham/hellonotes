@@ -239,14 +239,20 @@ nonisolated final class RenderedBlockFragment: NSTextLayoutFragment {
             else { continue }
             let tb = line.typographicBounds
             let band = CGRect(x: leftEdge, y: point.y + tb.origin.y, width: containerWidth, height: tb.height)
-            // Plain blockquotes get a bar only; callouts get a tinted band too.
-            let plain = ts.attribute(blockquotePlainAttribute, at: docStart, effectiveRange: nil) != nil
-            if !plain {
+            // Plain blockquotes: one gutter bar per `>` nesting level, no fill.
+            // Callouts: a tinted band + a single accent bar.
+            if let depth = ts.attribute(blockquotePlainAttribute, at: docStart, effectiveRange: nil) as? Int {
+                tint.withAlphaComponent(0.55).setFill()
+                for level in 0..<max(1, depth) {
+                    let x = leftEdge + CGFloat(level) * RenderedBlockFragment.quoteBarStep
+                    NSBezierPath(rect: CGRect(x: x, y: band.minY, width: barWidth, height: tb.height)).fill()
+                }
+            } else {
                 tint.withAlphaComponent(0.10).setFill()
                 NSBezierPath(rect: band).fill()
+                tint.withAlphaComponent(0.85).setFill()
+                NSBezierPath(rect: CGRect(x: leftEdge, y: band.minY, width: barWidth, height: tb.height)).fill()
             }
-            tint.withAlphaComponent(plain ? 0.55 : 0.85).setFill()
-            NSBezierPath(rect: CGRect(x: leftEdge, y: band.minY, width: barWidth, height: tb.height)).fill()
 
             if let symbol = ts.attribute(calloutIconAttribute, at: docStart, effectiveRange: nil) as? String,
                let icon = calloutIcon(symbol, tint: tint) {
@@ -273,6 +279,9 @@ nonisolated final class RenderedBlockFragment: NSTextLayoutFragment {
 
     /// Distance from the band's right edge to the fold chevron's left edge.
     static let calloutChevronInset: CGFloat = 22
+    /// Horizontal distance between successive nested blockquote bars (matches
+    /// `StyleApplier.quoteBarStep`).
+    static let quoteBarStep: CGFloat = 12
 
     private nonisolated func calloutIcon(_ symbol: String, tint: NSColor) -> NSImage? {
         let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)

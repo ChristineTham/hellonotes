@@ -113,7 +113,10 @@ public enum StyleSpec {
                 let hi = lines.contentRange(textEnd, in: text)
                 let content = NSRange(location: start, length: hi.location + hi.length - start)
                 runs.append(StyleRun(range: content, role: .headingText(level: level)))
-                runs.append(StyleRun(range: lines.contentRange(last, in: text), role: .marker))
+                // Conceal the whole `===`/`---` underline line (incl. its
+                // newline) so it collapses to ~zero height — GitHub shows no
+                // underline. Revealed for editing when the caret is inside.
+                runs.append(StyleRun(range: lines.lineRange(last), role: .marker, concealment: .whenInactive))
                 return [content]
             }
             let line = lines.contentRange(first, in: text)
@@ -210,6 +213,13 @@ public enum StyleSpec {
         case .listItem(let info):
             var spans: [NSRange] = []
             let markerLine = lines.contentRange(first, in: text)
+            // Conceal the source indent whitespace; the paragraph's head
+            // indent (set in StyleApplier) controls the visual nesting depth
+            // so sub-lists indent GitHub-deep, not by raw source columns.
+            if info.indent > 0 {
+                runs.append(StyleRun(range: NSRange(location: markerLine.location, length: info.indent),
+                                     role: .marker, concealment: .whenInactive))
+            }
             let markerRange = NSRange(location: markerLine.location + info.indent, length: info.markerLength)
             if info.isOrdered {
                 runs.append(StyleRun(range: markerRange, role: .listMarker))   // numbers stay
@@ -314,6 +324,10 @@ public enum StyleSpec {
             case .footnoteRef:
                 contentRole = .footnote
                 markerConcealment = .never
+            case .escape:
+                // Conceal the backslash; the escaped punctuation stays literal.
+                contentRole = nil
+                markerConcealment = .whenInactive
             }
             if let contentRole {
                 runs.append(StyleRun(range: node.contentRange, role: contentRole))

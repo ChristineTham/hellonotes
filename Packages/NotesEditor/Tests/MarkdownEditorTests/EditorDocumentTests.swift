@@ -328,9 +328,9 @@ import AppKit
         let s = text as NSString
         let quoteStart = s.range(of: "> A quote").location
 
-        // Neutral bar tint + plain flag set on the block; `>` concealed.
+        // Neutral bar tint + depth (1) set on the block; `>` concealed.
         #expect(ns.attribute(calloutTintAttribute, at: quoteStart, effectiveRange: nil) != nil)
-        #expect(ns.attribute(blockquotePlainAttribute, at: quoteStart, effectiveRange: nil) as? Bool == true)
+        #expect(ns.attribute(blockquotePlainAttribute, at: quoteStart, effectiveRange: nil) as? Int == 1)
         #expect((ns.attribute(.font, at: quoteStart, effectiveRange: nil) as? PlatformFont)?.pointSize == 0.1)
         #expect(document.text == text)
     }

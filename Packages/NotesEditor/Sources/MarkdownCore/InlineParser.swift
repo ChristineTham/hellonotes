@@ -38,6 +38,15 @@ public enum InlineParser {
             let c = b[i]
             switch c {
             case 0x5C: // backslash escape
+                // A backslash before ASCII punctuation escapes it (GFM): the
+                // `\` is a concealable marker, the punctuation is literal.
+                if i + 1 < n, isASCIIPunctuation(b[i + 1]) {
+                    nodes.append(InlineNode(
+                        kind: .escape,
+                        range: NSRange(location: abs(i), length: 2),
+                        contentRange: NSRange(location: abs(i + 1), length: 1),
+                        markerRanges: [NSRange(location: abs(i), length: 1)]))
+                }
                 i += 2
 
             case 0x60: // ` — code span
@@ -323,6 +332,12 @@ public enum InlineParser {
                 NSRange(location: base + start, length: link.textLo - start),
                 NSRange(location: base + link.textHi, length: link.end - link.textHi),
             ])
+    }
+
+    /// ASCII punctuation, per the GFM backslash-escape rule.
+    private static func isASCIIPunctuation(_ c: unichar) -> Bool {
+        (c >= 0x21 && c <= 0x2F) || (c >= 0x3A && c <= 0x40) ||
+        (c >= 0x5B && c <= 0x60) || (c >= 0x7B && c <= 0x7E)
     }
 
     private static func findRun(_ b: [unichar], char: unichar, length: Int, from: Int, count: Int) -> Int? {

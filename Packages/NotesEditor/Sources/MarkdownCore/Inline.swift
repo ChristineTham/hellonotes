@@ -24,6 +24,7 @@ public enum InlineKind: Sendable, Equatable {
     case autolink(url: String)       // <https://…> or bare https://…
     case tag(name: String)           // #tag
     case footnoteRef(id: String)     // [^id]
+    case escape                      // \* \` \# … (the backslash conceals)
 }
 
 public struct InlineNode: Sendable, Equatable {

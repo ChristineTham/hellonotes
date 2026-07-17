@@ -88,7 +88,12 @@ import Testing
     }
 
     @Test func escapedDelimiterIsLiteral() {
-        #expect(parse(#"\*not\* emphasis"#).isEmpty)
+        // The `*` is escaped → no emphasis; each `\` becomes a concealable
+        // escape node (backslash marker, literal punctuation as content).
+        let nodes = parse(#"\*not\* emphasis"#)
+        #expect(nodes.allSatisfy { $0.kind == .escape })
+        #expect(nodes.count == 2)
+        #expect(nodes.first?.markerRanges == [NSRange(location: 0, length: 1)])
     }
 
     // MARK: - Links

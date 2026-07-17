@@ -20,7 +20,7 @@ enum TableImageRenderer {
     private static let cellPadX: CGFloat = 10
     private static let cellPadY: CGFloat = 5
 
-    static func image(source: String, maxWidth: CGFloat, isDark: Bool) -> NSImage? {
+    static func image(source: String, maxWidth: CGFloat, fontSize: CGFloat = 15, isDark: Bool) -> NSImage? {
         let lines = source.components(separatedBy: "\n").filter { $0.contains("|") }
         guard lines.count >= 2 else { return nil }
 
@@ -34,8 +34,8 @@ enum TableImageRenderer {
         let text: NSColor = isDark ? NSColor(white: 0.92, alpha: 1) : NSColor(white: 0.1, alpha: 1)
         let grid: NSColor = isDark ? NSColor(white: 1, alpha: 0.18) : NSColor(white: 0, alpha: 0.18)
         let headerBG: NSColor = isDark ? NSColor(white: 1, alpha: 0.06) : NSColor(white: 0, alpha: 0.05)
-        let body = NSFont.systemFont(ofSize: 13)
-        let bold = NSFont.boldSystemFont(ofSize: 13)
+        let body = NSFont.systemFont(ofSize: fontSize)
+        let bold = NSFont.boldSystemFont(ofSize: fontSize)
 
         // Measure natural column widths, then scale down to fit maxWidth.
         func attr(_ s: String, _ f: NSFont) -> NSAttributedString {
