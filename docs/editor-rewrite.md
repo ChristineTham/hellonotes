@@ -218,6 +218,7 @@ The editor treats AI as a first-class text producer, not a bolt-on:
 6. **M5** *(future)* — iOS `UITextView(usingTextLayoutManager:)` sibling on
    the shared kernel.
 
-**Deferred polish** (not blockers; tracked in `docs/editor-parity.md`):
-inline `$…$` LaTeX rendered as images, callout collapse/fold, front-matter
-fold, footnotes, tables v1.
+All the former "deferred polish" items shipped after M4: inline `$…$` LaTeX
+as baseline images, tables (aligned grid), `> [!type]` syntax concealment,
+front-matter fold, callout collapse/fold, and footnotes. The only remaining
+non-M5 gap tracked in `docs/editor-parity.md` is the iOS editor (M5).

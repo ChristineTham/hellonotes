@@ -59,13 +59,14 @@ Updated 2026-07-17 (post-M4).
 | Rendered embeds: `![[image]]`, Mermaid, block LaTeX, transclusion, **tables** | ✓ | all through one fragment-drawn `BlockRenderer` path (source concealed + collapsed outside the caret, revealed inside, byte-pure storage, per-hash cache). LaTeX via in-app SwiftMath `MathImageRenderer`; tables via `TableImageRenderer` (aligned grid) |
 | Task checkbox click-toggle | ✓ | real glyphs over the concealed `[ ]`/`[x]`; click toggles undoably, persists to disk |
 | Callouts (`> [!type]`) rendered | ✓ | tinted band + gutter bar + icon + colored title |
+| Conceal `> [!type]` header syntax | ✓ | header prefix + body `>` markers concealed outside the caret, revealed inside. (Root-caused a latent bug: `NSTextView.font` set after storage attach clobbered per-run concealed fonts — fixed) |
+| Inline `$…$` LaTeX as image | ✓ | baseline-aligned inline image, width reserved via `.kern`, source concealed outside the caret |
+| Front-matter fold | ✓ | raw YAML concealed in the body (the Properties panel is the editing surface); caret entry reveals it |
+| Callout collapse/fold | ✓ | right-aligned disclosure chevron; click folds/unfolds; ephemeral state remapped across edits, never written to the file |
+| Footnotes | ✓ | refs `[^id]` styled; definitions readable inline with full inline formatting |
 
 ## Deferred polish (not blockers)
 
 | Item | Notes |
 |---|---|
-| Inline `$…$` LaTeX as image | genuinely hard (baseline-aligned inline image + width reservation); styled monospace source meanwhile |
-| Callout collapse/fold, front-matter fold | cosmetic |
-| Conceal `> [!type]` header syntax | attempted; hit a TextKit indent-collapse bug, reverted — needs revisit |
-| Footnote definitions as a rendered list | refs styled + definitions readable inline today |
 | iOS editor | M5 — `UITextView(usingTextLayoutManager:)` on the shared kernel |
