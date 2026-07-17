@@ -119,15 +119,35 @@ struct AssistantView: View {
 
     private let bottomID = "assistant-bottom"
 
+    @ViewBuilder
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Chat with \(model.activeProvider.displayName)")
-                .font(.title3.bold())
-            Text("Ask anything. Switch providers from the menu above. Your API keys stay in the Keychain.")
-                .foregroundStyle(.secondary)
+        if model.settings.isActiveProviderConfigured {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Chat with \(model.activeProvider.displayName)")
+                    .font(.title3.bold())
+                Text("Ask anything. Switch providers from the menu above. Your API keys stay in the Keychain.")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 40)
+        } else {
+            VStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.largeTitle)
+                    .foregroundStyle(.secondary)
+                Text("Set up AI to get started")
+                    .font(.title3.bold())
+                Text("\(model.activeProvider.displayName) needs an API key. Add one in Settings, or switch to a local provider (Apple, MLX, Ollama, LM Studio).")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                #if os(macOS)
+                SettingsLink { Text("Open AI Settings…") }
+                    .buttonStyle(.borderedProminent)
+                #endif
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 40)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 40)
     }
 
     // MARK: - Composer

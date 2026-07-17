@@ -24,6 +24,8 @@ struct MacContentView: View {
     /// Open notes as tabs, each with its own debounced-autosave editor. Tabs may
     /// hold notes from any collection in the library.
     @State private var tabs = EditorTabs()
+    /// A folder pending a confirmed "Move to Trash" (trashes all its contents).
+    @State private var pendingFolderDelete: URL?
 
     /// Git commit identity + hosting-service accounts (GitHub, GitLab, …).
     @State private var gitAccounts = GitAccountsStore()
@@ -360,6 +362,11 @@ struct MacContentView: View {
         }
         .onDisappear { TerminationGuard.current?.unregister(tabs) }
         .modifier(FileOperationErrorAlert(collection: focused))
+        .modifier(FolderDeleteConfirmation(folder: $pendingFolderDelete) { folder in
+            if let c = library.collections.first(where: { folder.path.hasPrefix($0.id) }) {
+                Task { await c.deleteFolder(at: folder) }
+            }
+        })
         .sheet(isPresented: $showOpenQuickly) {
             if let c = focused {
                 OpenQuicklyView(search: c.search) { selectedNoteID = $0.id }
@@ -514,6 +521,11 @@ struct MacContentView: View {
                     exportPDF: {
                         if let editor = activeEditor {
                             EditorExport.exportPDF(markdown: editor.text, title: note.title)
+                        }
+                    },
+                    printNote: {
+                        if let editor = activeEditor {
+                            EditorExport.printNote(markdown: editor.text, title: note.title)
                         }
                     },
                     moveToTrash: {
@@ -929,9 +941,8 @@ struct MacContentView: View {
                 newFolderName = ""
             },
             onDeleteFolder: { folderID in
-                if let c = library.collections.first(where: { folderID.hasPrefix($0.id) }) {
-                    Task { await c.deleteFolder(at: URL(fileURLWithPath: folderID, isDirectory: true)) }
-                }
+                // Deleting a folder trashes everything inside it — confirm first.
+                pendingFolderDelete = URL(fileURLWithPath: folderID, isDirectory: true)
             },
             onMoveItem: { source, folder in moveItem(at: source, into: folder) }
         )
@@ -1196,6 +1207,26 @@ private struct FileOperationErrorAlert: ViewModifier {
         ) { _ in
             Button("OK", role: .cancel) {}
         } message: { Text($0) }
+    }
+}
+
+/// Confirms a folder "Move to Trash" (which trashes all its contents). Extracted
+/// from the shell body to keep it type-checkable.
+private struct FolderDeleteConfirmation: ViewModifier {
+    @Binding var folder: URL?
+    var onConfirm: (URL) -> Void
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            folder.map { "Move “\($0.lastPathComponent)” and its contents to the Trash?" } ?? "",
+            isPresented: Binding(get: { folder != nil }, set: { if !$0 { folder = nil } }),
+            titleVisibility: .visible,
+            presenting: folder
+        ) { f in
+            Button("Move to Trash", role: .destructive) { onConfirm(f) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Everything inside the folder will be moved to the Trash. You can recover it from there.")
+        }
     }
 }
 #endif

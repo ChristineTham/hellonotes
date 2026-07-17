@@ -24,6 +24,33 @@ enum EditorExport {
         save(data: pdfData(fromHTML: html), suggestedName: "\(title).pdf", type: .pdf)
     }
 
+    /// Print the note via the standard print panel, rendering its HTML through
+    /// the native text system (no WebView).
+    static func printNote(markdown: String, title: String) {
+        let html = MarkdownExport.html(from: markdown, title: title)
+        guard let htmlData = html.data(using: .utf8),
+              let attributed = try? NSAttributedString(
+                data: htmlData,
+                options: [
+                    .documentType: NSAttributedString.DocumentType.html,
+                    .characterEncoding: String.Encoding.utf8.rawValue,
+                ],
+                documentAttributes: nil
+              ) else {
+            presentError("Couldn't prepare “\(title)” for printing.")
+            return
+        }
+        let info = NSPrintInfo.shared
+        info.topMargin = 48; info.bottomMargin = 48; info.leftMargin = 48; info.rightMargin = 48
+        let contentWidth = info.paperSize.width - info.leftMargin - info.rightMargin
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 100))
+        textView.isEditable = false
+        textView.textStorage?.setAttributedString(attributed)
+        let op = NSPrintOperation(view: textView, printInfo: info)
+        op.jobTitle = title
+        op.run()
+    }
+
     // MARK: - Private
 
     private static func save(data: Data?, suggestedName: String, type: UTType) {

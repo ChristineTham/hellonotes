@@ -65,13 +65,10 @@
 
 ## 4 · Usability & error-surfacing
 
-- 🟠 **Local file operations show the user nothing on failure** — the §1 silent-failure cluster surfaces here as UX: rename/duplicate/delete/new-folder/move that fail just close the dialog with no message. Needs one consistent error-surfacing pass (alert/toast).
-- 🟠 **Folder delete has no confirmation** — "Move to Trash" on a folder instantly trashes all its contents (`NoteOutlineList.swift:505` → `MacContentView.swift:1107`); add a confirm for folders (single notes are recoverable, lower stakes).
-- 🟠 **No Print support (⌘P)** — there is no `NSPrintOperation`/print path anywhere; a standard menu item for a notes app is absent. (PDF export exists but is not the same as ⌘P.)
-- 🟠 **No "AI not configured" guidance** — with zero providers/keys set, the Assistant still invites "Ask anything…" (`AssistantView.swift:122`); there's no config gating and no link to Settings — the user only finds out via an error after sending.
-- 🟡 **Indeterminate spinners with no timeout/cancel** — git clone/create/push spin on `git.isBusy` alone (`CloneRepositoryView.swift:139`, `NewRepositoryView.swift:81`, `MacContentView.swift:693`); a hung network op spins forever with no cancel.
-- 🟡 **References panel disappears when empty** instead of a "No backlinks yet" state (`NoteEditorView.swift:622`).
-- 🟡 **`renameNote` conflates "invalid" and "name taken"** (both return `nil`, `Collection.swift:369`), so even a fixed error path can't tell the user which.
+*Resolved and moved to [implemented.md §6](implemented.md#6--production-release-hardening): file-operation errors now surface (alert); folder-delete confirmation; ⌘P Print; "AI not configured" empty state; rename distinguishes name-taken from OS errors.*
+
+- 🟡 **Indeterminate spinners with no timeout/cancel** — git clone/create/push spin on `git.isBusy` alone (`CloneRepositoryView.swift`, `NewRepositoryView.swift`); a hung network op spins with no cancel. The op has a libgit2 timeout, but the UI offers no Cancel button.
+- 🟡 **References panel disappears when empty** instead of a "No backlinks yet" state (`NoteEditorView.swift`).
 - 🟡 **Duplicate has no keyboard shortcut** (⌘D is Bookmark, Finder-style).
 
 ---

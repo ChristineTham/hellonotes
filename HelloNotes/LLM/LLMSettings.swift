@@ -49,6 +49,13 @@ final class LLMSettings {
         didSet { UserDefaults.standard.set(temperature, forKey: Keys.temperature) }
     }
 
+    /// Whether the active provider can actually run: a local provider needs no
+    /// key; a cloud provider needs an API key in the Keychain. Drives the
+    /// Assistant's "set up AI" empty state.
+    var isActiveProviderConfigured: Bool {
+        activeProvider.requiresAPIKey ? LLMKeychain.hasKey(for: activeProvider) : true
+    }
+
     private enum Keys {
         static let providers = "llmProviders"
         static let active = "llmActiveProvider"

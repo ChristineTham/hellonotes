@@ -61,6 +61,7 @@ struct NoteMenuActions {
     var openInNewWindow: () -> Void
     var exportHTML: () -> Void
     var exportPDF: () -> Void
+    var printNote: () -> Void
     var moveToTrash: () -> Void
 }
 
@@ -136,6 +137,13 @@ struct HelloNotesCommands: Commands {
             Button("Export as HTML…") { actions?.note?.exportHTML() }
                 .disabled(actions?.note == nil)
             Button("Export as PDF…") { actions?.note?.exportPDF() }
+                .disabled(actions?.note == nil)
+        }
+
+        // MARK: File — Print (⌘P), the standard menu item a notes app must have.
+        CommandGroup(replacing: .printItem) {
+            Button("Print…") { actions?.note?.printNote() }
+                .keyboardShortcut("p", modifiers: .command)
                 .disabled(actions?.note == nil)
         }
 
