@@ -232,7 +232,32 @@ public final class MarkdownTextView: NSTextView {
         // A click on a rendered task checkbox toggles `[ ]` ↔ `[x]` instead
         // of moving the caret.
         if toggleTaskCheckbox(at: event) { return }
+        // A click on a callout header's fold chevron toggles the fold.
+        if toggleCalloutFold(at: event) { return }
         super.mouseDown(with: event)
+    }
+
+    /// If the click landed on a foldable callout header's right-aligned
+    /// disclosure chevron, toggle the fold and return true.
+    private func toggleCalloutFold(at event: NSEvent) -> Bool {
+        guard let document, let storage = textStorage,
+              let container = textContainer else { return false }
+        let point = convert(event.locationInWindow, from: nil)
+        // The chevron sits at the right edge of the text container.
+        let containerRight = textContainerOrigin.x + container.size.width
+        let chevronZoneLeft = containerRight - RenderedBlockFragment.calloutChevronInset - 10
+        guard point.x >= chevronZoneLeft else { return false }
+
+        let index = characterIndexForInsertion(at: point)
+        guard index >= 0, index <= storage.length else { return false }
+        let ns = storage.string as NSString
+        let line = ns.lineRange(for: NSRange(location: min(index, max(0, ns.length - 1)), length: 0))
+        guard document.isFoldableCalloutHeader(atCharacter: line.location) else { return false }
+        guard let blockRange = document.toggleCalloutFold(atHeaderOffset: line.location) else { return false }
+        invalidateLayout(charactersIn: blockRange)
+        // The chevron only shows when the callout isn't revealed, so the caret
+        // is already elsewhere — leave the selection untouched.
+        return true
     }
 
     /// If the click landed on a concealed task box, toggle it (undoably) and

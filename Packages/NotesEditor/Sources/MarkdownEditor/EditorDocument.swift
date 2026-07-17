@@ -274,6 +274,7 @@ public final class EditorDocument {
         guard !isApplyingStyles else { return }
         let oldRange = NSRange(location: editedRange.location, length: editedRange.length - delta)
         let edit = TextEdit(range: oldRange, replacementLength: editedRange.length)
+        remapFoldedCallouts(oldRange: oldRange, delta: delta)
 
         var t0 = DispatchTime.now()
         let hadPendingStyling = styledBlocks.contains(false)
@@ -499,6 +500,7 @@ public final class EditorDocument {
         #if canImport(AppKit)
         for index in blockIndices {
             refreshFrontMatterFold(blockIndex: index, revealed: revealed.contains(index))
+            refreshCalloutFold(blockIndex: index, revealed: revealed.contains(index))
         }
         if services.blockRenderer != nil {
             for index in blockIndices {
@@ -722,6 +724,79 @@ public final class EditorDocument {
         storage.addAttribute(.foregroundColor, value: PlatformColor.clear, range: content)
         storage.endEditing()
         isApplyingStyles = false
+    }
+
+    // MARK: - Callout fold
+
+    /// Character offsets (callout header-line starts) of folded callouts.
+    /// Ephemeral view state — never written to the file — kept stable across
+    /// edits by `remapFoldedCallouts`.
+    @ObservationIgnored private var foldedCallouts: Set<Int> = []
+
+    /// Mark a foldable (multi-line) callout header with its fold state so the
+    /// fragment draws the chevron, and conceal the body when folded. Skipped
+    /// while the callout is revealed (caret inside → full source for editing).
+    private func refreshCalloutFold(blockIndex: Int, revealed: Bool) {
+        guard blockIndex >= 0, blockIndex < parse.blocks.count else { return }
+        let block = parse.blocks[blockIndex]
+        guard case .blockquote(.some) = block.kind, block.lineCount > 1, !revealed else { return }
+        let headerLine = parse.lines.lineRange(block.firstLine)
+        guard headerLine.location < storage.length else { return }
+        let folded = foldedCallouts.contains(block.range.location)
+
+        isApplyingStyles = true
+        storage.beginEditing()
+        storage.addAttribute(calloutFoldAttribute, value: folded,
+                             range: NSRange(location: headerLine.location, length: 1))
+        if folded {
+            let bodyStart = headerLine.location + headerLine.length
+            var bodyLen = block.range.location + block.range.length - bodyStart
+            let ns: NSString = storage.mutableString
+            if bodyLen > 0, bodyStart + bodyLen <= ns.length,
+               ns.character(at: bodyStart + bodyLen - 1) == 0x0A { bodyLen -= 1 }
+            if bodyLen > 0, bodyStart + bodyLen <= storage.length {
+                let bodyRange = NSRange(location: bodyStart, length: bodyLen)
+                storage.addAttribute(.font, value: theme.concealed, range: bodyRange)
+                storage.addAttribute(.foregroundColor, value: PlatformColor.clear, range: bodyRange)
+                storage.removeAttribute(calloutTintAttribute, range: bodyRange)
+            }
+        }
+        storage.endEditing()
+        isApplyingStyles = false
+    }
+
+    /// Toggle the fold state of the callout header containing `offset`. Returns
+    /// the block's character range (so the caller can invalidate layout), or
+    /// nil if `offset` isn't on a foldable callout header.
+    @discardableResult
+    public func toggleCalloutFold(atHeaderOffset offset: Int) -> NSRange? {
+        guard let idx = parse.blockIndex(at: offset), idx < parse.blocks.count else { return nil }
+        let block = parse.blocks[idx]
+        guard case .blockquote(.some) = block.kind, block.lineCount > 1 else { return nil }
+        let key = block.range.location
+        if foldedCallouts.contains(key) { foldedCallouts.remove(key) } else { foldedCallouts.insert(key) }
+        restyle(blockIndices: [idx], revealed: revealedBlocks)
+        return block.range
+    }
+
+    /// True if `offset` falls on a foldable callout's header line.
+    public func isFoldableCalloutHeader(atCharacter offset: Int) -> Bool {
+        guard let idx = parse.blockIndex(at: offset), idx < parse.blocks.count else { return false }
+        let block = parse.blocks[idx]
+        guard case .blockquote(.some) = block.kind, block.lineCount > 1 else { return false }
+        return offset < parse.lines.lineRange(block.firstLine).location + parse.lines.lineRange(block.firstLine).length
+    }
+
+    /// Keep folded-callout offsets valid after a text edit at `editStart`
+    /// with `delta` change in length.
+    private func remapFoldedCallouts(oldRange: NSRange, delta: Int) {
+        guard !foldedCallouts.isEmpty else { return }
+        let oldEnd = oldRange.location + oldRange.length
+        foldedCallouts = Set(foldedCallouts.compactMap { off in
+            if off < oldRange.location { return off }        // before the edit
+            if off < oldEnd { return nil }                    // inside → drop
+            return off + delta                                // after → shift
+        })
     }
 
     /// The usable text width for sizing rendered images.

@@ -62,6 +62,10 @@ nonisolated public let calloutTintAttribute = NSAttributedString.Key("hn.callout
 /// Custom attribute (String SF Symbol name) on a callout's header line —
 /// the fragment paints the icon in the gutter beside the title.
 nonisolated public let calloutIconAttribute = NSAttributedString.Key("hn.calloutIcon")
+/// Custom attribute (Bool = isFolded) on a callout header line — the fragment
+/// draws a right-aligned disclosure chevron; the text view toggles fold on a
+/// click there. Present only on foldable (multi-line) callout headers.
+nonisolated public let calloutFoldAttribute = NSAttributedString.Key("hn.calloutFold")
 
 /// Custom attribute (PlatformImage) on the first char of a concealed inline
 /// `$…$` math span — the fragment draws it at the baseline. The span's source
@@ -206,8 +210,24 @@ nonisolated final class RenderedBlockFragment: NSTextLayoutFragment {
                                   y: band.minY + (tb.height - side) / 2, width: side, height: side)
                 icon.draw(in: rect)
             }
+
+            // Foldable callout: a right-aligned disclosure chevron.
+            if let folded = ts.attribute(calloutFoldAttribute, at: docStart, effectiveRange: nil) as? Bool {
+                let side: CGFloat = 11
+                let rect = CGRect(x: band.maxX - Self.calloutChevronInset,
+                                  y: band.minY + (tb.height - side) / 2, width: side, height: side)
+                let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+                    .applying(.init(hierarchicalColor: tint))
+                NSImage(systemSymbolName: folded ? "chevron.right" : "chevron.down",
+                        accessibilityDescription: nil)?
+                    .withSymbolConfiguration(config)?
+                    .draw(in: rect)
+            }
         }
     }
+
+    /// Distance from the band's right edge to the fold chevron's left edge.
+    static let calloutChevronInset: CGFloat = 22
 
     private nonisolated func calloutIcon(_ symbol: String, tint: NSColor) -> NSImage? {
         let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)

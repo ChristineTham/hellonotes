@@ -204,6 +204,40 @@ import AppKit
     }
     #endif
 
+    #if canImport(AppKit)
+    /// Toggling a callout's fold conceals/reveals its body, marks the header
+    /// with the fold state, keeps the source byte-pure, and survives an edit
+    /// above it (offset remap).
+    @Test func calloutFoldTogglesBody() {
+        let text = "# H\n\n> [!note] Title\n> Body one.\n> Body two.\n\nEnd."
+        let document = EditorDocument(text: text)
+        document.selectionDidChange(NSRange(location: (text as NSString).range(of: "End.").location, length: 0))
+        let ns = document.storage
+        let headerLoc = (text as NSString).range(of: "> [!note] Title").location
+        let bodyLoc = (text as NSString).range(of: "Body one").location
+
+        // Expanded by default: body visible, chevron shows "not folded".
+        #expect((ns.attribute(.font, at: bodyLoc, effectiveRange: nil) as? PlatformFont)?.pointSize != 0.1)
+        #expect(ns.attribute(calloutFoldAttribute, at: headerLoc, effectiveRange: nil) as? Bool == false)
+
+        // Fold → body concealed.
+        _ = document.toggleCalloutFold(atHeaderOffset: headerLoc)
+        #expect(ns.attribute(calloutFoldAttribute, at: headerLoc, effectiveRange: nil) as? Bool == true)
+        #expect((ns.attribute(.font, at: bodyLoc, effectiveRange: nil) as? PlatformFont)?.pointSize == 0.1)
+        #expect(document.text == text)   // byte-pure
+
+        // An edit *above* the callout keeps the fold (offset remaps).
+        document.storage.replaceCharacters(in: NSRange(location: 0, length: 0), with: "X")
+        let newBodyLoc = (document.text as NSString).range(of: "Body one").location
+        #expect((ns.attribute(.font, at: newBodyLoc, effectiveRange: nil) as? PlatformFont)?.pointSize == 0.1)
+
+        // Unfold → body visible again.
+        let newHeaderLoc = (document.text as NSString).range(of: "> [!note] Title").location
+        _ = document.toggleCalloutFold(atHeaderOffset: newHeaderLoc)
+        #expect((ns.attribute(.font, at: newBodyLoc, effectiveRange: nil) as? PlatformFont)?.pointSize != 0.1)
+    }
+    #endif
+
     // MARK: - Code highlighting
 
     private struct MockHighlighter: CodeHighlighting {
