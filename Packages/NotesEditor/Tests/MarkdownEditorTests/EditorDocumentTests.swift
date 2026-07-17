@@ -111,6 +111,45 @@ import Testing
         #expect((attrs[.font] as? PlatformFont)?.pointSize != 0.1)
     }
 
+    // MARK: - Code highlighting
+
+    private struct MockHighlighter: CodeHighlighting {
+        func highlight(_ code: String, language: String) async -> NSAttributedString? {
+            guard language == "swift" else { return nil }
+            let styled = NSMutableAttributedString(string: code)
+            if let range = (code as NSString).range(of: "let") as NSRange?, range.location != NSNotFound {
+                styled.addAttribute(.foregroundColor, value: PlatformColor.systemPink, range: range)
+            }
+            return styled
+        }
+    }
+
+    @Test func codeBlockGetsHighlightColors() async throws {
+        let text = "# Title\n\n```swift\nlet x = 1\n```\n\ntail"
+        let document = EditorDocument(
+            text: text,
+            services: EditorServices(codeHighlighter: MockHighlighter())
+        )
+        // The async highlight lands after a hop; poll briefly.
+        let letLocation = (text as NSString).range(of: "let").location
+        var color: PlatformColor?
+        for _ in 0..<50 {
+            try await Task.sleep(for: .milliseconds(20))
+            color = document.storage.attribute(.foregroundColor, at: letLocation, effectiveRange: nil) as? PlatformColor
+            if color == .systemPink { break }
+        }
+        #expect(color == .systemPink)
+
+        // A caret-reveal restyle wipes and must re-apply synchronously from
+        // the document's color cache — no flash.
+        document.selectionDidChange(NSRange(location: letLocation, length: 0))
+        let after = document.storage.attribute(.foregroundColor, at: letLocation, effectiveRange: nil) as? PlatformColor
+        #expect(after == .systemPink)
+
+        // Text is untouched by highlighting.
+        #expect(document.text == text)
+    }
+
     // MARK: - Latency at the p99-note scale
 
     @Test func hugeNotePipelineLatency() async {

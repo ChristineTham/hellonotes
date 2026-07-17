@@ -87,9 +87,13 @@ public final class MarkdownTextView: NSTextView {
             textView.writingToolsBehavior = .complete
             textView.allowedWritingToolsResultOptions = [.plainText]
         }
-        // System inline predictive completion (ghost text) while typing.
+        // System inline predictive completion (ghost text) while typing —
+        // honoring the user's system-wide keyboard setting rather than
+        // forcing it on (predictions can suggest code-shaped fragments
+        // that don't belong in Markdown source; the system toggle is the
+        // right control surface).
         if #available(macOS 15.0, *) {
-            textView.inlinePredictionType = .yes
+            textView.inlinePredictionType = .default
         }
 
         let scrollView = NSScrollView()

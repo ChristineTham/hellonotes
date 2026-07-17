@@ -30,6 +30,8 @@ struct NewEditorHost: View {
     /// Pasteboard → Markdown intents (image-to-attachment, HTML-to-md).
     var pasteMarkdown: (NSPasteboard) -> String? = { _ in nil }
 
+    @Environment(\.colorScheme) private var colorScheme
+
     @State private var document: EditorDocument?
     @State private var proxy = EditorProxy()
     @State private var syncTask: Task<Void, Never>?
@@ -72,9 +74,10 @@ struct NewEditorHost: View {
             syncTask?.cancel()
             // Case-insensitive title set, matching CollectionWikiLinkResolver.
             let titles = Set(linkCandidates.map { $0.lowercased() })
-            let services = EditorServices(wikiLinkExists: { title in
-                titles.contains(title.lowercased())
-            })
+            let services = EditorServices(
+                wikiLinkExists: { title in titles.contains(title.lowercased()) },
+                codeHighlighter: CodeHighlighterAdapter(darkMode: colorScheme == .dark)
+            )
             let built = await EditorDocument.make(
                 text: editor.text,
                 theme: EditorTheme(fontSize: fontSize, accent: accent),
@@ -102,9 +105,10 @@ struct NewEditorHost: View {
 
     /// Rebuild the document when the note or its loaded-from-disk state
     /// changes (open, external reload, conflict resolution — never our own
-    /// saves), or when the theme changes.
+    /// saves), or when the theme/appearance changes (highlight colors are
+    /// appearance-specific).
     private var taskKey: String {
-        "\(editor.note?.fileURL.path ?? "")|\(editor.loadRevision)|\(Int(fontSize))"
+        "\(editor.note?.fileURL.path ?? "")|\(editor.loadRevision)|\(Int(fontSize))|\(colorScheme == .dark ? "d" : "l")"
     }
 
     private func scheduleSync(from document: EditorDocument) {

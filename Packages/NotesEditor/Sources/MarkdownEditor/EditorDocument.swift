@@ -33,14 +33,32 @@ import AppKit
 import UIKit
 #endif
 
+/// Multi-language code highlighting for fenced blocks. Implementations run
+/// off the main actor (typically an actor wrapping a highlighting engine);
+/// the editor extracts only the *foreground colors* from the result — fonts
+/// and backgrounds stay the editor theme's — and caches per content hash,
+/// so the engine underneath is swappable (highlight.js today, tree-sitter
+/// tomorrow) without touching the editor.
+public protocol CodeHighlighting: Sendable {
+    /// A styled rendering of `code` for `language`, or nil when the
+    /// language is unknown or highlighting fails.
+    func highlight(_ code: String, language: String) async -> NSAttributedString?
+}
+
 /// Services the host app injects. All closures are Sendable (styling can
 /// run from any context that owns the document).
 public struct EditorServices: Sendable {
     /// Does a note with this title exist? Drives resolved vs. muted wiki links.
     public var wikiLinkExists: (@Sendable (String) -> Bool)?
+    /// Fenced-code-block syntax highlighting (async upgrade; optional).
+    public var codeHighlighter: (any CodeHighlighting)?
 
-    public init(wikiLinkExists: (@Sendable (String) -> Bool)? = nil) {
+    public init(
+        wikiLinkExists: (@Sendable (String) -> Bool)? = nil,
+        codeHighlighter: (any CodeHighlighting)? = nil
+    ) {
         self.wikiLinkExists = wikiLinkExists
+        self.codeHighlighter = codeHighlighter
     }
 }
 
@@ -458,6 +476,90 @@ public final class EditorDocument {
             revealed: revealed,
             resolveWiki: services.wikiLinkExists
         )
+        isApplyingStyles = false
+        if services.codeHighlighter != nil {
+            for index in blockIndices { refreshHighlight(blockIndex: index) }
+        }
+    }
+
+    // MARK: - Fenced-code syntax highlighting
+
+    /// Color runs per (code, language) hash, in code-relative coordinates.
+    /// Cached on the document so a restyle (base styling wipes attributes)
+    /// re-applies colors *synchronously* — no flash when the caret enters
+    /// or leaves a code block. Misses fetch asynchronously.
+    @ObservationIgnored private var highlightColorCache: [Int: [(NSRange, PlatformColor)]] = [:]
+    @ObservationIgnored private var highlightsInFlight: Set<Int> = []
+
+    private func refreshHighlight(blockIndex: Int) {
+        guard let highlighter = services.codeHighlighter,
+              blockIndex >= 0, blockIndex < parse.blocks.count else { return }
+        let block = parse.blocks[blockIndex]
+        guard case .fencedCode(let info, let closed) = block.kind, !info.isEmpty else { return }
+
+        // The code body: lines between the fences.
+        let bodyFirst = block.firstLine + 1
+        let bodyLast = block.firstLine + block.lineCount - (closed ? 2 : 1)
+        guard bodyFirst <= bodyLast else { return }
+        let ns: NSString = storage.mutableString
+        let start = parse.lines.lineRange(bodyFirst).location
+        let endLine = parse.lines.contentRange(bodyLast, in: ns)
+        let bodyRange = NSRange(location: start, length: max(0, endLine.location + endLine.length - start))
+        guard bodyRange.length > 0, bodyRange.location + bodyRange.length <= ns.length else { return }
+
+        let code = ns.substring(with: bodyRange)
+        // The fence info string may carry extras ("swift {title}"): the
+        // language is its first word.
+        let language = info.split(separator: " ").first.map(String.init)?.lowercased() ?? info.lowercased()
+
+        var hasher = Hasher()
+        hasher.combine(code)
+        hasher.combine(language)
+        let key = hasher.finalize()
+
+        if let runs = highlightColorCache[key] {
+            applyHighlight(runs: runs, at: bodyRange.location)
+            return
+        }
+        guard !highlightsInFlight.contains(key) else { return }
+        highlightsInFlight.insert(key)
+
+        Task { [weak self] in
+            let styled = await highlighter.highlight(code, language: language)
+            guard let self else { return }
+            self.highlightsInFlight.remove(key)
+            guard let styled else { return }
+            var runs: [(NSRange, PlatformColor)] = []
+            styled.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: styled.length)) { value, range, _ in
+                if let color = value as? PlatformColor { runs.append((range, color)) }
+            }
+            if self.highlightColorCache.count > 128 { self.highlightColorCache.removeAll() }
+            self.highlightColorCache[key] = runs
+            // The text may have shifted while the highlight ran; re-derive
+            // the block from the body's old location and apply only if its
+            // content still matches (otherwise the next restyle picks the
+            // cached runs up).
+            if let idx = self.parse.blockIndex(at: min(bodyRange.location, max(0, self.storage.length - 1))),
+               case .fencedCode = self.parse.blocks[idx].kind {
+                self.refreshHighlight(blockIndex: idx)
+            }
+        }
+    }
+
+    /// Overlay foreground colors onto the code body. Colors only — fonts,
+    /// backgrounds, and metrics stay the editor theme's, so highlighting
+    /// can never change layout.
+    private func applyHighlight(runs: [(NSRange, PlatformColor)], at base: Int) {
+        guard !runs.isEmpty else { return }
+        isApplyingStyles = true
+        storage.beginEditing()
+        let limit = storage.length
+        for (range, color) in runs {
+            let target = NSRange(location: base + range.location, length: range.length)
+            guard target.location + target.length <= limit else { continue }
+            storage.addAttribute(.foregroundColor, value: color, range: target)
+        }
+        storage.endEditing()
         isApplyingStyles = false
     }
 }

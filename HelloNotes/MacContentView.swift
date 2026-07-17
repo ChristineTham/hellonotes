@@ -444,30 +444,45 @@ struct MacContentView: View {
 
     // MARK: - Menu-bar actions (File / Note / View commands)
 
+    /// Wraps a menu-bar command so it dismisses the Open Quickly palette before
+    /// running. A global shortcut (⌘N, ⌘O, …) fired while the palette sheet is
+    /// up would otherwise mutate selection/presentation state underneath it and
+    /// wedge the sheet's focus — Escape stops dismissing until the query field
+    /// recovers. Commands behave as if the user closed the palette first.
+    private func closingOpenQuickly(_ action: @escaping () -> Void) -> () -> Void {
+        {
+            showOpenQuickly = false
+            action()
+        }
+    }
+
     /// The command surface published to the menu bar for this window.
     private var appActions: AppActions {
         AppActions(
             canNewNote: focused != nil,
-            newNote: { newNote() },
-            todaysNote: { openTodaysNote() },
-            openLauncher: { showLauncher = true },
+            newNote: closingOpenQuickly { newNote() },
+            todaysNote: closingOpenQuickly { openTodaysNote() },
+            openLauncher: closingOpenQuickly { showLauncher = true },
             canOpenQuickly: !(focused?.notes.isEmpty ?? true),
             openQuickly: { showOpenQuickly = true },
             canGraph: !(focused?.notes.isEmpty ?? true),
-            graphView: { openWindow(id: "graph") },
+            graphView: closingOpenQuickly { openWindow(id: "graph") },
             canAsk: !library.allNotes.isEmpty,
-            askLibrary: { openWindow(id: "askLibrary") },
-            assistant: { openWindow(id: "assistant") },
+            askLibrary: closingOpenQuickly { openWindow(id: "askLibrary") },
+            assistant: closingOpenQuickly { openWindow(id: "assistant") },
             canCloseTab: tabs.openNotes.count > 1 && tabs.editor(withID: selectedNoteID) != nil,
-            closeTab: { if let id = selectedNoteID { closeTab(id) } },
-            format: selectedNote.map { note in
+            closeTab: closingOpenQuickly { if let id = selectedNoteID { closeTab(id) } },
+            // Format and Note commands target the note *behind* the palette
+            // (Rename would even stack an alert on the sheet), so they grey
+            // out while it's presented instead of dismissing it.
+            format: showOpenQuickly ? nil : selectedNote.map { note in
                 { action in
                     NotificationCenter.default.post(
                         name: .hnFormat(action.kind, documentId: note.fileURL.path),
                         object: nil, userInfo: action.userInfo)
                 }
             },
-            note: selectedNote.map { note in
+            note: showOpenQuickly ? nil : selectedNote.map { note in
                 NoteMenuActions(
                     isBookmarked: library.collection(containing: note.fileURL)?.bookmarks.isBookmarked(note) ?? false,
                     rename: { beginRename(note) },

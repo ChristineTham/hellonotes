@@ -53,6 +53,9 @@ struct OpenQuicklyView: View {
             .listStyle(.plain)
         }
         .frame(width: 540, height: 420)
+        // Escape must always dismiss, even if the text field has lost first-
+        // responder status — don't rely on the sheet's implicit cancel action.
+        .onExitCommand { dismiss() }
         .onAppear { fieldFocused = true; results = search.quickOpenResults(query: "") }
         .onChange(of: query) { _, q in scheduleQuery(q) }
         .onChange(of: results) { _, newResults in

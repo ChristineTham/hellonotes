@@ -26,7 +26,7 @@ Updated 2026-07-17 (M1).
 | **System inline predictions** | ✓ | `inlinePredictionType = .yes` |
 | **AI edit seam** | ✓ | `EditorProxy.replace/performAITransform` — undoable programmatic edits through the typing path; ready for provider-driven rewrite UI |
 | Provider-driven AI UI (rewrite selection with prompt, ghost completion) | ✗ | next — app-side UI on the EditorProxy seam + app's IntelligenceService |
-| Code-block syntax highlighting (async upgrade) | ✗ | M2.5 |
+| Code-block syntax highlighting | ✓ | live-verified. HighlighterSwift (kept after a doc-cited survey: Apple ships no multi-language highlighter through the 26 SDKs; hljs wrappers beat tree-sitter for cached one-shot snippets — see editor-rewrite.md). Behind our own `CodeHighlighting` protocol: engine-swappable, colors-only overlay (metrics stay ours), synchronous re-apply from a per-document cache so caret reveals never flash. Now a *direct* SPM dependency (survives fork removal at M4) |
 | Rendered embeds: `![[image]]`, block LaTeX, Mermaid, transclusion cards | ✗ | M3 — fragment drawing |
 | Inline LaTeX rendered as image | ✗ | M3+; styled source meanwhile |
 | Callout collapse, front-matter fold | ✗ | M3 |
