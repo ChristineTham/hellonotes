@@ -48,6 +48,13 @@ nonisolated let blockImageAttribute = NSAttributedString.Key("hn.blockImage")
 /// text view toggles it on click.
 nonisolated public let taskCheckboxAttribute = NSAttributedString.Key("hn.taskCheckbox")
 
+/// Custom attribute (PlatformColor) on every line of a callout — the
+/// fragment paints a tinted full-width band + an accent bar in the gutter.
+nonisolated public let calloutTintAttribute = NSAttributedString.Key("hn.calloutTint")
+/// Custom attribute (String SF Symbol name) on a callout's header line —
+/// the fragment paints the icon in the gutter beside the title.
+nonisolated public let calloutIconAttribute = NSAttributedString.Key("hn.calloutIcon")
+
 #if canImport(AppKit)
 /// An `NSTextLayoutFragment` that draws a collapsed block's rendered image in
 /// the vertical band its paragraph reserves via `paragraphSpacing`. Only
@@ -85,16 +92,8 @@ nonisolated final class RenderedBlockFragment: NSTextLayoutFragment {
         return (image, lineHeight + Self.imageGap)
     }
 
-    override nonisolated var renderingSurfaceBounds: CGRect {
-        var bounds = super.renderingSurfaceBounds
-        if let (image, bandTop) = blockImage() {
-            let rect = CGRect(x: 0, y: bandTop, width: image.size.width, height: image.size.height)
-            bounds = bounds.union(rect)
-        }
-        return bounds
-    }
-
     override nonisolated func draw(at point: CGPoint, in context: CGContext) {
+        drawCalloutBands(at: point, in: context)   // behind the text
         super.draw(at: point, in: context)   // concealed source (invisible)
         drawTaskCheckboxes(at: point, in: context)
 
@@ -136,6 +135,71 @@ nonisolated final class RenderedBlockFragment: NSTextLayoutFragment {
                 img.draw(in: box)
             }
         }
+    }
+
+    // MARK: - Callouts
+
+    override nonisolated var renderingSurfaceBounds: CGRect {
+        var bounds = super.renderingSurfaceBounds
+        if let (image, bandTop) = blockImage() {
+            bounds = bounds.union(CGRect(x: 0, y: bandTop, width: image.size.width, height: image.size.height))
+        }
+        if hasCallout, let width = textLayoutManager?.textContainer?.size.width {
+            bounds.origin.x = -layoutFragmentFrame.origin.x
+            bounds.size.width = width
+        }
+        return bounds
+    }
+
+    private nonisolated var hasCallout: Bool {
+        guard let ts = textStorage, let range = fragmentRange, range.length > 0,
+              range.location < ts.length else { return false }
+        var found = false
+        ts.enumerateAttribute(calloutTintAttribute, in: range, options: []) { v, _, stop in
+            if v != nil { found = true; stop.pointee = true }
+        }
+        return found
+    }
+
+    /// Paint a tinted full-width band + an accent bar in the gutter for every
+    /// callout line, and the header line's SF Symbol icon.
+    private nonisolated func drawCalloutBands(at point: CGPoint, in context: CGContext) {
+        guard let ts = textStorage, let range = fragmentRange, range.length > 0 else { return }
+        let containerWidth = textLayoutManager?.textContainer?.size.width ?? layoutFragmentFrame.width
+        let barWidth: CGFloat = 3
+
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+
+        let leftEdge = point.x - layoutFragmentFrame.origin.x
+        for line in textLineFragments {
+            let docStart = range.location + line.characterRange.location
+            guard docStart < ts.length,
+                  let tint = ts.attribute(calloutTintAttribute, at: docStart, effectiveRange: nil) as? NSColor
+            else { continue }
+            let tb = line.typographicBounds
+            let band = CGRect(x: leftEdge, y: point.y + tb.origin.y, width: containerWidth, height: tb.height)
+            tint.withAlphaComponent(0.10).setFill()
+            NSBezierPath(rect: band).fill()
+            tint.withAlphaComponent(0.85).setFill()
+            NSBezierPath(rect: CGRect(x: leftEdge, y: band.minY, width: barWidth, height: tb.height)).fill()
+
+            if let symbol = ts.attribute(calloutIconAttribute, at: docStart, effectiveRange: nil) as? String,
+               let icon = calloutIcon(symbol, tint: tint) {
+                let side: CGFloat = 13
+                let rect = CGRect(x: leftEdge + barWidth + 4,
+                                  y: band.minY + (tb.height - side) / 2, width: side, height: side)
+                icon.draw(in: rect)
+            }
+        }
+    }
+
+    private nonisolated func calloutIcon(_ symbol: String, tint: NSColor) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+            .applying(.init(hierarchicalColor: tint))
+        return NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
     }
 
     /// Draw position (x, baselineY) for the character at document offset

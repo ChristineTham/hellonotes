@@ -64,6 +64,47 @@ nonisolated enum StyleApplier {
             base[.font] = theme.mono
         }
         target.setAttributes(base, range: block.range)
+
+        // Callout chrome: tint every line so the fragment can paint the band
+        // and gutter bar; put the icon on the header line; indent the text so
+        // it clears the bar + icon.
+        if case .blockquote(let callout?) = block.kind {
+            let (tint, icon) = calloutStyle(for: callout, theme: theme)
+            target.addAttribute(calloutTintAttribute, value: tint, range: block.range)
+            let indent = NSMutableParagraphStyle()
+            indent.headIndent = 24
+            indent.firstLineHeadIndent = 24
+            target.addAttribute(.paragraphStyle, value: indent, range: block.range)
+            let header = NSRange(location: block.range.location,
+                                 length: min(1, block.range.length))
+            if header.length > 0 {
+                target.addAttribute(calloutIconAttribute, value: icon, range: header)
+            }
+        }
+    }
+
+    /// Obsidian-style callout tint + SF Symbol per `[!type]`.
+    static func calloutStyle(for type: String, theme: EditorTheme) -> (PlatformColor, String) {
+        switch type {
+        case "tip", "hint", "important":
+            return (.systemTeal, "flame")
+        case "warning", "caution", "attention":
+            return (.systemOrange, "exclamationmark.triangle")
+        case "danger", "error", "bug", "failure", "fail", "missing":
+            return (.systemRed, "xmark.octagon")
+        case "success", "check", "done":
+            return (.systemGreen, "checkmark.circle")
+        case "question", "help", "faq":
+            return (.systemYellow, "questionmark.circle")
+        case "example":
+            return (.systemPurple, "list.bullet")
+        case "quote", "cite":
+            return (theme.secondary, "quote.opening")
+        case "abstract", "summary", "tldr":
+            return (.systemTeal, "text.alignleft")
+        default: // note, info, …
+            return (theme.accent, "pencil.circle")
+        }
     }
 
     private static func apply(
@@ -167,8 +208,9 @@ nonisolated enum StyleApplier {
         case .quote:
             target.addAttribute(.foregroundColor, value: theme.secondary, range: range)
 
-        case .calloutTitle:
-            target.addAttributes([.font: theme.bodyBold, .foregroundColor: theme.accent], range: range)
+        case .calloutTitle(let type):
+            let (tint, _) = Self.calloutStyle(for: type, theme: theme)
+            target.addAttributes([.font: theme.bodyBold, .foregroundColor: tint], range: range)
 
         case .listMarker:
             target.addAttributes([.foregroundColor: theme.accent], range: range)
