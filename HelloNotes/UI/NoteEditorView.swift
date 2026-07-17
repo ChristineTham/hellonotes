@@ -406,7 +406,8 @@ struct NoteEditorView: View {
                 },
                 pasteMarkdown: { pasteboard in
                     pasteImage(pasteboard) ?? smartPaste(pasteboard)
-                }
+                },
+                intelligence: intelligence
             )
         } else {
             NativeTextViewWrapper(

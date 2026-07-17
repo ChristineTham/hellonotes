@@ -65,6 +65,21 @@ struct IntelligenceService {
             user: "Notes from my library:\n\n\(contextText)\n\nQuestion: \(question)")
     }
 
+    /// Rewrite a passage per the user's instruction (the editor's
+    /// rewrite-selection feature). Returns only the rewritten text.
+    func rewrite(_ text: String, instruction: String) async throws -> String {
+        if isApple { return try await NoteIntelligence.rewrite(text, instruction: instruction) }
+        return try await complete(
+            system: """
+            You rewrite passages from the user's Markdown notes. Follow the rewrite \
+            instruction faithfully. Keep Markdown syntax (links, emphasis, lists, \
+            headings) intact unless the instruction says otherwise. Reply with ONLY \
+            the rewritten text — no preamble, no quotes, no code fences.
+            """,
+            user: "Instruction: \(instruction)\n\nText:\n\(String(text.prefix(Self.maxInputChars)))",
+            temperature: 0.4)
+    }
+
     func suggestTags(for noteText: String, existing: [String]) async throws -> [String] {
         if isApple { return try await NoteIntelligence.suggestTags(for: noteText, existing: existing) }
         let existingList = existing.isEmpty ? "none" : existing.joined(separator: ", ")

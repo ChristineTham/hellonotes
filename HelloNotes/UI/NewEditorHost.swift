@@ -29,6 +29,8 @@ struct NewEditorHost: View {
     var completions: (EditorCompletionKind, String) -> [WikiCompletion] = { _, _ in [] }
     /// Pasteboard → Markdown intents (image-to-attachment, HTML-to-md).
     var pasteMarkdown: (NSPasteboard) -> String? = { _ in nil }
+    /// The provider-backed intelligence service ("Rewrite with AI…").
+    var intelligence: IntelligenceService? = nil
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -39,6 +41,11 @@ struct NewEditorHost: View {
     // Autocomplete popup state, reported by the editor per caret move.
     @State private var inlineContext: EditorDocument.InlineContext?
     @State private var caretRect: CGRect = .zero
+
+    // "Rewrite with AI…" state: the selection captured when the context-menu
+    // item fired (the range, not the text, so Replace targets exactly what
+    // was selected even if the preview takes a while).
+    @State private var rewriteRange: NSRange?
 
     var body: some View {
         Group {
@@ -57,6 +64,25 @@ struct NewEditorHost: View {
                     .onInlineContext { context, rect in
                         if inlineContext != context { inlineContext = context }
                         caretRect = rect
+                    }
+                    .onRewriteSelection { range in
+                        if intelligence != nil { rewriteRange = range }
+                    }
+                    .sheet(isPresented: Binding(
+                        get: { rewriteRange != nil },
+                        set: { if !$0 { rewriteRange = nil } }
+                    )) {
+                        if let intelligence, let range = rewriteRange {
+                            RewriteSelectionView(
+                                intelligence: intelligence,
+                                original: document.text(in: range),
+                                onReplace: { proxy.replace(range: range, with: $0) },
+                                onInsertBelow: { rewritten in
+                                    let after = NSRange(location: range.location + range.length, length: 0)
+                                    proxy.replace(range: after, with: "\n\n\(rewritten)")
+                                }
+                            )
+                        }
                     }
                     .overlay(alignment: .topLeading) {
                         let matches = activeCompletions

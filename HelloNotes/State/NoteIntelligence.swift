@@ -102,6 +102,28 @@ struct NoteIntelligence {
         throw IntelligenceError.unavailable
     }
 
+    /// Rewrite `text` following the user's instruction, returning only the
+    /// rewritten text (Markdown-safe: structure is preserved unless the
+    /// instruction says otherwise).
+    static func rewrite(_ text: String, instruction: String) async throws -> String {
+        #if canImport(FoundationModels)
+        if #available(macOS 26.0, *) {
+            let session = LanguageModelSession(
+                instructions: """
+                You rewrite passages from the user's Markdown notes. Follow the rewrite \
+                instruction faithfully. Keep Markdown syntax (links, emphasis, lists, \
+                headings) intact unless the instruction says otherwise. Reply with ONLY \
+                the rewritten text — no preamble, no quotes, no code fences.
+                """
+            )
+            let response = try await session.respond(
+                to: "Instruction: \(instruction)\n\nText:\n\(String(text.prefix(maxInputChars)))")
+            return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        #endif
+        throw IntelligenceError.unavailable
+    }
+
     static func expand(_ noteText: String) async throws -> String {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {

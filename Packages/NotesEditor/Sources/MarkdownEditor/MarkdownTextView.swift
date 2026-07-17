@@ -152,6 +152,29 @@ public final class MarkdownTextView: NSTextView {
     /// rect in this view's enclosing scroll-view coordinates, or nil.
     var onInlineContextChange: ((EditorDocument.InlineContext?, CGRect) -> Void)?
 
+    /// Host AI hook: when set (and the view is editable), the selection's
+    /// context menu offers "Rewrite with AI…", delivering the selected range.
+    var onRewriteSelection: ((NSRange) -> Void)?
+
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event)
+        if onRewriteSelection != nil, isEditable, selectedRange().length > 0 {
+            let item = NSMenuItem(title: String(localized: "Rewrite with AI…"),
+                                  action: #selector(rewriteSelectionFromMenu(_:)),
+                                  keyEquivalent: "")
+            item.target = self
+            menu?.insertItem(item, at: 0)
+            menu?.insertItem(.separator(), at: 1)
+        }
+        return menu
+    }
+
+    @objc private func rewriteSelectionFromMenu(_ sender: Any?) {
+        let selection = selectedRange()
+        guard selection.length > 0 else { return }
+        onRewriteSelection?(selection)
+    }
+
     // Report every selection movement so the document can flip syntax
     // reveal on the caret's block (O(paragraph)).
     public override func setSelectedRanges(
@@ -240,6 +263,7 @@ public struct MarkdownEditorView: NSViewRepresentable {
     private var onLinkTap: ((EditorLinkTap) -> Void)?
     private var onPasteMarkdown: ((NSPasteboard) -> String?)?
     private var onInlineContext: ((EditorDocument.InlineContext?, CGRect) -> Void)?
+    private var onRewriteSelectionHandler: ((NSRange) -> Void)?
     private var busDocumentId: String?
     private var editorProxy: EditorProxy?
 
@@ -264,6 +288,13 @@ public struct MarkdownEditorView: NSViewRepresentable {
     /// the caret rect in the wrapper's coordinate space).
     public func onInlineContext(_ handler: @escaping (EditorDocument.InlineContext?, CGRect) -> Void) -> Self {
         var copy = self; copy.onInlineContext = handler; return copy
+    }
+
+    /// AI rewrite hook: adds "Rewrite with AI…" to the selection context
+    /// menu; the handler receives the selected range (resolve its text via
+    /// `document.text(in:)`, apply results via the proxy).
+    public func onRewriteSelection(_ handler: @escaping (NSRange) -> Void) -> Self {
+        var copy = self; copy.onRewriteSelectionHandler = handler; return copy
     }
 
     /// Join the app's per-document notification bus (Format menu commands,
@@ -294,6 +325,7 @@ public struct MarkdownEditorView: NSViewRepresentable {
         context.coordinator.onLinkTap = onLinkTap
         textView.onPasteMarkdown = onPasteMarkdown
         textView.onInlineContextChange = onInlineContext
+        textView.onRewriteSelection = onRewriteSelectionHandler
         editorProxy?.textView = textView
         applyProperties(textView)
     }

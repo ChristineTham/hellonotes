@@ -25,7 +25,8 @@ Updated 2026-07-17 (M1).
 | **Writing Tools (Apple Intelligence)** | ✓ | `.complete` behavior, results constrained to `.plainText` so rewrites can't corrupt Markdown; styling pauses during sessions, one catch-up restyle at end |
 | **System inline predictions** | ✓ | `inlinePredictionType = .yes` |
 | **AI edit seam** | ✓ | `EditorProxy.replace/performAITransform` — undoable programmatic edits through the typing path; ready for provider-driven rewrite UI |
-| Provider-driven AI UI (rewrite selection with prompt, ghost completion) | ✗ | next — app-side UI on the EditorProxy seam + app's IntelligenceService |
+| **Rewrite selection with AI** (canned tasks + free-form prompt) | ✓ | live-verified on-device: context-menu "Rewrite with AI…" → sheet with 6 canned tasks + custom instruction, preview, Replace/Insert Below through the undoable EditorProxy path; routed through the user's chosen provider (Apple on-device or cloud key) |
+| Provider-driven ghost completion | ✗ | later — system inline predictions cover the basic case today |
 | Code-block syntax highlighting | ✓ | live-verified. HighlighterSwift (kept after a doc-cited survey: Apple ships no multi-language highlighter through the 26 SDKs; hljs wrappers beat tree-sitter for cached one-shot snippets — see editor-rewrite.md). Behind our own `CodeHighlighting` protocol: engine-swappable, colors-only overlay (metrics stay ours), synchronous re-apply from a per-document cache so caret reveals never flash. Now a *direct* SPM dependency (survives fork removal at M4) |
 | Rendered embeds: `![[image]]`, block LaTeX, Mermaid, transclusion cards | ✗ | M3 — fragment drawing |
 | Inline LaTeX rendered as image | ✗ | M3+; styled source meanwhile |
