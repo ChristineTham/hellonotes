@@ -32,6 +32,9 @@ public enum TextRole: Sendable, Equatable {
     case quote
     case calloutTitle(type: String)
     case listMarker
+    /// An unordered-list marker (`-`/`*`/`+`) to be drawn as a bullet glyph
+    /// (disc/ring/square by nesting depth), GitHub-style.
+    case listBullet(depth: Int)
     case taskMarker(checked: Bool)
     case thematicBreak
     case frontMatter
@@ -193,8 +196,10 @@ public enum StyleSpec {
                     runs.append(StyleRun(range: content, role: .quote))
                     spans.append(content)
                 } else {
+                    // Plain blockquote: conceal the `>` marker(s) so the
+                    // fragment's gutter bar reads as the quote (GitHub-style).
                     if markerRange.length > 0 {
-                        runs.append(StyleRun(range: markerRange, role: .marker))
+                        runs.append(StyleRun(range: markerRange, role: .marker, concealment: .whenInactive))
                     }
                     runs.append(StyleRun(range: content, role: .quote))
                     spans.append(content)
@@ -206,7 +211,16 @@ public enum StyleSpec {
             var spans: [NSRange] = []
             let markerLine = lines.contentRange(first, in: text)
             let markerRange = NSRange(location: markerLine.location + info.indent, length: info.markerLength)
-            runs.append(StyleRun(range: markerRange, role: .listMarker))
+            if info.isOrdered {
+                runs.append(StyleRun(range: markerRange, role: .listMarker))   // numbers stay
+            } else if info.task != nil {
+                // Task item: conceal the `-`/`*` marker so only the checkbox
+                // shows (GitHub renders just the box, not box-after-bullet).
+                runs.append(StyleRun(range: markerRange, role: .marker, concealment: .whenInactive))
+            } else {
+                // Unordered: draw a bullet in place of the raw marker.
+                runs.append(StyleRun(range: markerRange, role: .listBullet(depth: info.indent / 2)))
+            }
             if let task = info.task {
                 // The `[ ]` / `[x]` box sits right after "marker + space".
                 let boxStart = markerLine.location + info.indent + info.markerLength + 1

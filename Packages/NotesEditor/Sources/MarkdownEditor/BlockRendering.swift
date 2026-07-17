@@ -66,6 +66,12 @@ nonisolated public let calloutIconAttribute = NSAttributedString.Key("hn.callout
 /// draws a right-aligned disclosure chevron; the text view toggles fold on a
 /// click there. Present only on foldable (multi-line) callout headers.
 nonisolated public let calloutFoldAttribute = NSAttributedString.Key("hn.calloutFold")
+/// Custom attribute (Int = nesting depth) on a concealed unordered-list
+/// marker — the fragment draws a bullet glyph (disc/ring/square) in its place.
+nonisolated public let listBulletAttribute = NSAttributedString.Key("hn.listBullet")
+/// Marks a plain (non-callout) blockquote line so the fragment draws only a
+/// gutter bar — no tint fill, no icon.
+nonisolated public let blockquotePlainAttribute = NSAttributedString.Key("hn.blockquotePlain")
 
 /// Custom attribute (PlatformImage) on the first char of a concealed inline
 /// `$…$` math span — the fragment draws it at the baseline. The span's source
@@ -113,6 +119,7 @@ nonisolated final class RenderedBlockFragment: NSTextLayoutFragment {
         drawCalloutBands(at: point, in: context)   // behind the text
         super.draw(at: point, in: context)   // concealed source (invisible)
         drawTaskCheckboxes(at: point, in: context)
+        drawListBullets(at: point, in: context)
         drawInlineImages(at: point, in: context)
 
         guard let (image, bandTop) = blockImage() else { return }
@@ -151,6 +158,40 @@ nonisolated final class RenderedBlockFragment: NSTextLayoutFragment {
             if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
                 .withSymbolConfiguration(config) {
                 img.draw(in: box)
+            }
+        }
+    }
+
+    // MARK: - List bullets
+
+    /// Draw a bullet glyph over each concealed unordered-list marker: a filled
+    /// disc, hollow ring, or filled square by nesting depth (GitHub-style).
+    private nonisolated func drawListBullets(at point: CGPoint, in context: CGContext) {
+        guard let ts = textStorage, let range = fragmentRange, range.length > 0 else { return }
+        NSGraphicsContext.saveGraphicsState()
+        defer { NSGraphicsContext.restoreGraphicsState() }
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+
+        ts.enumerateAttribute(listBulletAttribute, in: range, options: []) { value, attrRange, _ in
+            guard let depth = value as? Int,
+                  let line = lineFragment(forDocumentCharAt: attrRange.location),
+                  let pos = charPosition(forDocumentCharAt: attrRange.location, point: point) else { return }
+            let tb = line.typographicBounds
+            let side: CGFloat = 5
+            let cx = pos.x + 1
+            let cy = point.y + tb.origin.y + tb.height / 2
+            let rect = CGRect(x: cx, y: cy - side / 2, width: side, height: side)
+            NSColor.labelColor.setFill()
+            NSColor.labelColor.setStroke()
+            switch depth % 3 {
+            case 1:                                   // hollow ring
+                let ring = NSBezierPath(ovalIn: rect.insetBy(dx: 0.4, dy: 0.4))
+                ring.lineWidth = 1
+                ring.stroke()
+            case 2:                                   // filled square
+                NSBezierPath(rect: rect.insetBy(dx: 0.4, dy: 0.4)).fill()
+            default:                                  // filled disc
+                NSBezierPath(ovalIn: rect).fill()
             }
         }
     }
@@ -198,9 +239,13 @@ nonisolated final class RenderedBlockFragment: NSTextLayoutFragment {
             else { continue }
             let tb = line.typographicBounds
             let band = CGRect(x: leftEdge, y: point.y + tb.origin.y, width: containerWidth, height: tb.height)
-            tint.withAlphaComponent(0.10).setFill()
-            NSBezierPath(rect: band).fill()
-            tint.withAlphaComponent(0.85).setFill()
+            // Plain blockquotes get a bar only; callouts get a tinted band too.
+            let plain = ts.attribute(blockquotePlainAttribute, at: docStart, effectiveRange: nil) != nil
+            if !plain {
+                tint.withAlphaComponent(0.10).setFill()
+                NSBezierPath(rect: band).fill()
+            }
+            tint.withAlphaComponent(plain ? 0.55 : 0.85).setFill()
             NSBezierPath(rect: CGRect(x: leftEdge, y: band.minY, width: barWidth, height: tb.height)).fill()
 
             if let symbol = ts.attribute(calloutIconAttribute, at: docStart, effectiveRange: nil) as? String,

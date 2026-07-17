@@ -238,6 +238,104 @@ import AppKit
     }
     #endif
 
+    #if canImport(AppKit)
+    @Test func setextHeadingRendersLarge() {
+        let text = "###### H6 heading\n\nSetext H1\n=========\n\nSetext H2\n---------\n\nBody text here."
+        let document = EditorDocument(text: text)
+        document.selectionDidChange(NSRange(location: (text as NSString).range(of: "Body").location, length: 0))
+        let ns = document.storage
+        let s = text as NSString
+        for (label, needle) in [("h1", "Setext H1"), ("h2", "Setext H2")] {
+            let loc = s.range(of: needle).location
+            let f = ns.attribute(.font, at: loc, effectiveRange: nil) as? PlatformFont
+            print("setext \(label) font=\(f?.pointSize ?? -1)")
+        }
+        let bodyFont = ns.attribute(.font, at: s.range(of: "Body").location, effectiveRange: nil) as? PlatformFont
+        let h1Font = ns.attribute(.font, at: s.range(of: "Setext H1").location, effectiveRange: nil) as? PlatformFont
+        print("body=\(bodyFont?.pointSize ?? -1)")
+        #expect((h1Font?.pointSize ?? 0) > (bodyFont?.pointSize ?? 0), "setext H1 should be larger than body")
+
+        // Now measure the REAL TextKit 2 laid-out line height (live-fidelity),
+        // reproducing the view's bind order.
+        let tv = NSTextView(usingTextLayoutManager: true)
+        tv.font = document.theme.body
+        (tv.textLayoutManager?.textContentManager as? NSTextContentStorage)?.textStorage = document.storage
+        let layout = tv.textLayoutManager!
+        layout.textContainer?.size = CGSize(width: 600, height: 1e6)
+        layout.ensureLayout(for: layout.documentRange)
+        func lineHeight(atCharAt loc: Int) -> CGFloat {
+            let cm = layout.textContentManager!
+            guard let pos = cm.location(cm.documentRange.location, offsetBy: loc),
+                  let frag = layout.textLayoutFragment(for: pos) else { return -1 }
+            return frag.textLineFragments.first?.typographicBounds.height ?? -1
+        }
+        let h1H = lineHeight(atCharAt: s.range(of: "Setext H1").location)
+        let atxH = lineHeight(atCharAt: s.range(of: "H6 heading").location)
+        let bodyH = lineHeight(atCharAt: s.range(of: "Body").location)
+        print("laidout heights — setextH1=\(h1H) atxH6=\(atxH) body=\(bodyH)")
+    }
+    #endif
+
+    #if canImport(AppKit)
+    @Test func checkedTaskHasNoStrikethrough() {
+        let text = "- [ ] Unchecked task\n- [x] Checked task\n- [x] ~~real strike~~ here"
+        let document = EditorDocument(text: text)
+        document.selectionDidChange(NSRange(location: 0, length: 0))
+        let ns = document.storage
+        let s = text as NSString
+        let checkedLoc = s.range(of: "Checked task").location
+        let strike = ns.attribute(.strikethroughStyle, at: checkedLoc, effectiveRange: nil)
+        print("checked-task strikethrough attr = \(String(describing: strike))")
+        #expect(strike == nil, "checked task text must not be struck through (GitHub parity)")
+    }
+    #endif
+
+    #if canImport(AppKit)
+    @Test func unorderedListDrawsBullets() {
+        let text = "- First\n- Second\n  - Nested\n1. One\n- [ ] Task\n\nBody paragraph."
+        let document = EditorDocument(text: text)
+        document.selectionDidChange(NSRange(location: (text as NSString).range(of: "Body").location, length: 0))
+        let ns = document.storage
+        let s = text as NSString
+
+        // Unordered `-` → concealed (clear) + bullet attribute (depth 0).
+        let firstDash = s.range(of: "- First").location
+        #expect(ns.attribute(.foregroundColor, at: firstDash, effectiveRange: nil) as? PlatformColor == .clear)
+        #expect(ns.attribute(listBulletAttribute, at: firstDash, effectiveRange: nil) as? Int == 0)
+
+        // Nested `-` → depth 1.
+        let nestedDash = s.range(of: "- Nested").location
+        #expect(ns.attribute(listBulletAttribute, at: nestedDash, effectiveRange: nil) as? Int == 1)
+
+        // Ordered `1.` keeps its number (no bullet attribute).
+        let one = s.range(of: "1. One").location
+        #expect(ns.attribute(listBulletAttribute, at: one, effectiveRange: nil) == nil)
+
+        // Task `-` → concealed, no bullet (checkbox is the visual).
+        let taskDash = s.range(of: "- [ ] Task").location
+        #expect(ns.attribute(listBulletAttribute, at: taskDash, effectiveRange: nil) == nil)
+        #expect((ns.attribute(.font, at: taskDash, effectiveRange: nil) as? PlatformFont)?.pointSize == 0.1)
+
+        // Source stays byte-pure.
+        #expect(document.text == text)
+    }
+
+    @Test func plainBlockquoteGetsBarAndConcealsMarker() {
+        let text = "> A quote line.\n> continues.\n\nBody."
+        let document = EditorDocument(text: text)
+        document.selectionDidChange(NSRange(location: (text as NSString).range(of: "Body").location, length: 0))
+        let ns = document.storage
+        let s = text as NSString
+        let quoteStart = s.range(of: "> A quote").location
+
+        // Neutral bar tint + plain flag set on the block; `>` concealed.
+        #expect(ns.attribute(calloutTintAttribute, at: quoteStart, effectiveRange: nil) != nil)
+        #expect(ns.attribute(blockquotePlainAttribute, at: quoteStart, effectiveRange: nil) as? Bool == true)
+        #expect((ns.attribute(.font, at: quoteStart, effectiveRange: nil) as? PlatformFont)?.pointSize == 0.1)
+        #expect(document.text == text)
+    }
+    #endif
+
     // MARK: - Code highlighting
 
     private struct MockHighlighter: CodeHighlighting {

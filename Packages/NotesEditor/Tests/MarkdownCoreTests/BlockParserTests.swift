@@ -55,6 +55,13 @@ import Testing
         #expect(kinds("Para\n\n---") == [.paragraph, .blank, .thematicBreak])
     }
 
+    @Test func setextHeadingsWithTrailingNewline() {
+        // The realistic case: the underline line has a trailing newline.
+        #expect(kinds("Title\n===\n") == [.heading(level: 1, setext: true), .blank])
+        #expect(kinds("Title\n===\n\nNext") == [.heading(level: 1, setext: true), .blank, .paragraph])
+        #expect(kinds("Title\n---\n\nNext") == [.heading(level: 2, setext: true), .blank, .paragraph])
+    }
+
     // MARK: - Fences
 
     @Test func closedFence() {

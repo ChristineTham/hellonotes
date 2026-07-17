@@ -68,18 +68,28 @@ nonisolated enum StyleApplier {
         // Callout chrome: tint every line so the fragment can paint the band
         // and gutter bar; put the icon on the header line; indent the text so
         // it clears the bar + icon.
-        if case .blockquote(let callout?) = block.kind {
-            let (tint, icon) = calloutStyle(for: callout, theme: theme)
-            target.addAttribute(calloutTintAttribute, value: tint, range: block.range)
+        if case .blockquote(let callout) = block.kind {
             let indent = NSMutableParagraphStyle()
-            indent.headIndent = 24
-            indent.firstLineHeadIndent = 24
-            target.addAttribute(.paragraphStyle, value: indent, range: block.range)
-            let header = NSRange(location: block.range.location,
-                                 length: min(1, block.range.length))
-            if header.length > 0 {
-                target.addAttribute(calloutIconAttribute, value: icon, range: header)
+            if let callout {
+                // Obsidian callout: tinted band + gutter bar + header icon.
+                let (tint, icon) = calloutStyle(for: callout, theme: theme)
+                target.addAttribute(calloutTintAttribute, value: tint, range: block.range)
+                indent.headIndent = 24
+                indent.firstLineHeadIndent = 24
+                let header = NSRange(location: block.range.location,
+                                     length: min(1, block.range.length))
+                if header.length > 0 {
+                    target.addAttribute(calloutIconAttribute, value: icon, range: header)
+                }
+            } else {
+                // Plain blockquote: neutral gutter bar only (GitHub-style),
+                // gray text (the `.quote` role handles color).
+                target.addAttribute(calloutTintAttribute, value: theme.secondary, range: block.range)
+                target.addAttribute(blockquotePlainAttribute, value: true, range: block.range)
+                indent.headIndent = 16
+                indent.firstLineHeadIndent = 16
             }
+            target.addAttribute(.paragraphStyle, value: indent, range: block.range)
         }
     }
 
@@ -214,6 +224,18 @@ nonisolated enum StyleApplier {
 
         case .listMarker:
             target.addAttributes([.foregroundColor: theme.accent], range: range)
+
+        case .listBullet(let depth):
+            // Keep the marker's width but hide the raw glyph; the fragment
+            // draws a bullet in its place. Editing the line reveals the `-`.
+            if revealed {
+                target.addAttribute(.foregroundColor, value: theme.accent, range: range)
+            } else {
+                target.addAttributes([
+                    .foregroundColor: PlatformColor.clear,
+                    listBulletAttribute: depth,
+                ], range: range)
+            }
 
         case .taskMarker(let checked):
             // Conceal the `[ ]`/`[x]` characters (keep the mono width so the
