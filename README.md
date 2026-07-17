@@ -8,11 +8,11 @@ HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps li
 | Doc | What's in it |
 |---|---|
 | [docs/PRD.md](docs/PRD.md) | Product vision, users, feature requirements, success metrics |
-| [docs/architecture.md](docs/architecture.md) | 4-layer architecture + evaluation of every Swift package (alternatives & recommendations) |
-| [docs/implementation-plan.md](docs/implementation-plan.md) | Milestone-by-milestone build sequence (0–13) |
+| [docs/architecture.md](docs/architecture.md) | Current 4-layer architecture + the Swift packages the app links |
 | [docs/unimplemented.md](docs/unimplemented.md) | Deferred / not-yet-built items, with reasons and what would unblock each |
-| [docs/markdown-engine-strategy.md](docs/markdown-engine-strategy.md) | *(Historical)* How the MarkdownEngine fork first unblocked the editor, before the in-repo `Packages/NotesEditor` rewrite superseded it (M4) |
-| [docs/production.md](docs/production.md) | Step-by-step runbook to ship the app to the Mac App Store (copy-paste field values included) |
+| [docs/native-roadmap.md](docs/native-roadmap.md) | Forward roadmap for deeper Apple-platform integration (App Intents, widgets, Spotlight…) |
+| [docs/production.md](docs/production.md) | Step-by-step runbook to ship the app to the Mac App Store |
+| [docs/implemented.md](docs/implemented.md) | Implementation history — the milestone build sequence, the editor rewrite, the retired markdown-engine fork, and the GFM-fidelity work |
 
 ## ✨ Features (v1.0)
 
@@ -21,10 +21,11 @@ HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps li
 - **Obsidian vault import** — point HelloNotes at a folder of existing vaults and they open as collections, no migration.
 - Non-Markdown attachments (PDF, images, CSV…) appear in the tree and open in a native **file viewer** (QuickLook/PDFKit).
 
-**A truly native live editor**
-- Live TextKit 2 Markdown styling as you type: headings, emphasis, lists, task lists, tables, footnotes.
+**A truly native live editor** (the in-repo [`Packages/NotesEditor`](Packages/NotesEditor))
+- Live TextKit 2 Markdown styling as you type: headings, emphasis, lists, task lists, tables, footnotes — with Obsidian/Bear-style **caret-driven concealment** (move the caret into a construct and its Markdown source is revealed for editing).
 - Natively rendered (no browser engine): syntax-highlighted code, **LaTeX math**, **inline Mermaid diagrams**, Obsidian-style **callouts** (collapsible, with icons), dimmed `%%comments%%`, and hidden front matter paired with a typed, editable **Properties** panel.
 - **Note transclusion** — `![[Note]]` / `![[Note#heading]]` render as inline cards.
+- **GitHub-identical Preview** — the read-only Preview renders through **cmark-gfm** (the same engine GitHub uses) + GitHub's own CSS, proven by 648/648 GFM-spec conformance and byte-parity with the GitHub Markdown API. The live editor's styling is driven by the same engine.
 - **View modes**: Edit (live), Preview (read-only), Markdown (source), and Split — plus **⌘F find & replace**, image paste → `assets/`, smart paste (HTML → Markdown), multi-tab and multi-window editing, document statistics, outline with jump-to-heading, and **HTML/PDF export**.
 - **Marp slide decks** — notes with Marp front matter get a native slides preview.
 
@@ -46,14 +47,16 @@ HelloNotes is a native Apple-ecosystem alternative to Electron knowledge apps li
 **Native app polish**
 - Full menu bar with keyboard shortcuts, windowed Graph/Mind Map/Assistant/Ask Library surfaces, appearance settings (light/dark, accent colours, text size with Dynamic Type), a launch splash with live build info, and an adaptive iOS/iPadOS companion.
 
-> WebView policy: the *editing path is 100% native TextKit 2*. A `WKWebView` appears in exactly two places — the Marp slides preview, and the iOS read-only Preview (MarkdownEngine is AppKit-only).
+> WebView policy: the *editing path is 100% native TextKit 2*. A `WKWebView` appears only in read-only rendering surfaces — the macOS/iOS GFM **Preview** and the **Marp slides** preview — never in the editor itself.
 
 ## 🏗️ Architecture at a glance
 A strict **4-layer architecture** keeps macOS and iOS sharing everything but the shell:
 1. **Core / Domain** (pure Swift) — Markdown/front-matter/tag parsing, mention scanning, templates, graph & mind-map layout, statistics, export, Marp, Obsidian import, file watching. UI-agnostic, unit-tested.
-2. **State** — the `@Observable` macro *exclusively*: `Library` → `Collection`s (scan, CRUD, bookmarks), `EditorModel`/`EditorTabs`, `LinkGraph`, `CollectionSearchModel`, `GitService` (FIFO-serialized), `AppearanceSettings`, stores for recents/libraries/credentials.
+2. **State** — the `@Observable` macro *exclusively*: `Library` → `Collection`s (scan, CRUD, bookmarks, index cache), `EditorModel`/`EditorTabs`, `LinkGraph`, `CollectionSearchModel`, `GitService` (FIFO-serialized), `AppearanceSettings`, stores for recents/libraries/credentials.
 3. **Shared UI** — editor host, note tree, references panel, graph/mind map, assistant, viewers.
-4. **Platform shells** — `NavigationSplitView` shells for macOS and iOS/iPadOS behind `#if os(...)`.
+4. **Platform shells** — `NavigationSplitView` for macOS and `NavigationStack` for iOS/iPadOS behind `#if os(...)`.
+
+The **editor** is a separate local SPM package, [`Packages/NotesEditor`](Packages/NotesEditor) — `MarkdownCore` (incremental block/inline parser + style spec), `MarkdownEditor` (TextKit 2 `NSTextView`/`UITextView`), and `GFMRender` (cmark-gfm for the GitHub-identical Preview + spec/API parity).
 
 The **LLM layer** (`HelloNotes/LLM/`) follows the same split: `Sendable` provider adapters + agent tools at the Core tier; `@MainActor @Observable` models (`LLMSettings`, `AssistantModel`, `SkillStore`, `PermissionBroker`) at the State tier. Chat transcripts persist as JSONL under Application Support; API keys in the Keychain.
 
@@ -64,17 +67,19 @@ Swift Package Manager, native Apple frameworks first.
 
 **Apple frameworks:** SwiftUI · AppKit / TextKit 2 · Vision (image alt-text) · PDFKit / QuickLook · Security (Keychain) · libgit2 (via SwiftGitX)
 
-**Packages** (see [architecture.md §5](docs/architecture.md#5-package-evaluation) for the evaluation of each vs its alternatives):
+**Packages** (see [architecture.md](docs/architecture.md) for how each is used):
 
 | Package | Role |
 |---|---|
-| [swift-markdown-engine](https://github.com/ChristineTham/swift-markdown-engine) (fork, `hellonotes-patches`) | Live TextKit 2 Markdown editor + code/LaTeX bridges; the fork adds scroll-to-range, inline diagrams, find/replace, tag tokens, callouts/comments/front-matter styling ([why & how](docs/markdown-engine-strategy.md)) |
-| [swift-markdown](https://github.com/swiftlang/swift-markdown) | Apple's GFM AST parser (links, headings, tags, HTML export) |
+| [`Packages/NotesEditor`](Packages/NotesEditor) (in-repo) | Live TextKit 2 Markdown editor (`MarkdownCore` + `MarkdownEditor`) and GitHub-identical Preview (`GFMRender`) |
+| [swift-cmark](https://github.com/apple/swift-cmark) (`gfm` branch) | cmark-gfm — GitHub's own GFM engine, for the Preview + spec/API parity (via `GFMRender`) |
+| [swift-markdown](https://github.com/swiftlang/swift-markdown) | Apple's GFM AST parser — used in Core for headings, export, and Marp splitting (not editing) |
 | [SwiftGitX](https://github.com/ibrahimcetin/SwiftGitX) | Async/await Git engine over libgit2 |
-| [beautiful-mermaid-swift](https://github.com/lukilabs/beautiful-mermaid-swift) | Native Mermaid diagram rendering |
-| [mlx-swift](https://github.com/ml-explore/mlx-swift) + swift-transformers | Local LLM inference on Apple silicon (MLX provider) |
-| OpenAI (client) | OpenAI-compatible provider transport |
-| HighlighterSwift · SwiftMath | Code highlighting & math, via the MarkdownEngine bridges |
+| [beautiful-mermaid-swift](https://github.com/lukilabs/beautiful-mermaid-swift) + [elk-swift](https://github.com/lukilabs/elk-swift) | Native Mermaid diagram rendering + ELK layout |
+| [HighlighterSwift](https://github.com/smittytone/HighlighterSwift) | Code-block syntax highlighting (GitHub theme, matching the Preview) |
+| [SwiftMath](https://github.com/mgriebling/SwiftMath) | Native LaTeX math rendering (no WebView) |
+| [mlx-swift](https://github.com/ml-explore/mlx-swift) + [swift-transformers](https://github.com/huggingface/swift-transformers) | Local LLM inference on Apple silicon (MLX provider) |
+| [OpenAI](https://github.com/MacPaw/OpenAI) | OpenAI-compatible provider transport |
 
 ## 🚀 Build & run
 Requirements: **macOS 15+**, **Xcode 26+** (Swift 5.10+).
@@ -89,8 +94,11 @@ open HelloNotes.xcodeproj
 # …or build from the command line (a shared scheme is committed)
 xcodebuild -project HelloNotes.xcodeproj -scheme HelloNotes -destination 'platform=macOS' build
 
-# unit tests
+# app unit tests
 xcodebuild -project HelloNotes.xcodeproj -scheme HelloNotes -destination 'platform=macOS' -only-testing:HelloNotesTests test
+
+# editor package tests (GFM conformance, live-editor fidelity, parser fuzz)
+swift test --package-path Packages/NotesEditor
 ```
 
 Run the **HelloNotes** scheme, then click **Open…** and choose any directory of Markdown files — or point it at the bundled [`SampleVault/`](SampleVault/), whose notes demonstrate callouts, diagrams, math, transclusion, wiki-links, tags, slides, daily notes, and templates.
@@ -100,20 +108,21 @@ Run the **HelloNotes** scheme, then click **Open…** and choose any directory o
 HelloNotes/            App sources (synchronised Xcode group)
   ├─ Core/             Layer 1 — pure logic: parsing, front matter, tags,
   │                     mentions, templates, layouts, stats, export, Marp,
-  │                     Obsidian import, smart paste, build info
+  │                     Obsidian import, smart paste, index cache, build info
   ├─ State/            Layer 2 — @Observable models (library/collections,
   │                     editor/tabs, link graph, search, git, appearance,
   │                     bookmarks/recents/credentials)
   ├─ LLM/              AI layer — provider adapters (Anthropic, OpenAI-compat,
   │                     Gemini, MLX, Apple), agent runtime (tools, skills,
   │                     permissions, deep research), settings & chat stores
-  ├─ UI/               Layer 3 — shared views (editor, tree, references,
+  ├─ UI/               Layer 3 — shared views (editor host, tree, references,
   │                     graph, mind map, slides, viewers, assistant, splash)
   ├─ MacContentView    Layer 4 — macOS 3-column shell
   ├─ iOSContentView    Layer 4 — iOS/iPadOS adaptive shell
   └─ HelloNotesApp     App entry (main window + auxiliary window scenes)
-docs/                  PRD, architecture, implementation plan, production
-HelloNotesTests/       Unit tests (52)
+Packages/NotesEditor/  Live editor package (MarkdownCore, MarkdownEditor, GFMRender)
+docs/                  PRD, architecture, roadmap, production, implementation history
+HelloNotesTests/       App unit tests
 SampleVault/           Demo collection used by docs & screenshots
 HelloNotes.xcodeproj/  Project (SPM dependencies, shared scheme)
 ```

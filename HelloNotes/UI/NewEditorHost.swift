@@ -6,7 +6,7 @@
 //
 //  Hosts the new in-repo editor (Packages/NotesEditor) behind the
 //  "New editor (beta)" toggle while it works toward parity with the old
-//  engine — rollout plan in docs/editor-rewrite.md. Bridges the
+//  engine — rollout plan in docs/implemented.md. Bridges the
 //  EditorDocument world (the editor owns the text) to EditorModel's
 //  String world (autosave, conflicts) at save granularity: the document
 //  syncs its text back after a short idle, never per keystroke.

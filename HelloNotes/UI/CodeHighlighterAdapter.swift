@@ -7,7 +7,7 @@
 //  The new editor's CodeHighlighting service, backed by HighlighterSwift
 //  (highlight.js via JavaScriptCore — ~190 languages, no WebView; chosen
 //  after a survey of Apple APIs and the package ecosystem, see
-//  docs/editor-rewrite.md). An actor confines the non-Sendable JS engine;
+//  docs/implemented.md). An actor confines the non-Sendable JS engine;
 //  results are cached by (language, code) since JSCore calls are the
 //  expensive part. The editor extracts only foreground colors from the
 //  result, so theme/font/metrics stay the editor's own.

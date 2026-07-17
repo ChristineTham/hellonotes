@@ -10,7 +10,7 @@ HelloNotes is a **native, local-first Markdown knowledge base for the Apple ecos
 
 The product bet: a knowledge tool built on **AppKit + TextKit 2 + SwiftUI** can deliver editing latency, scroll performance, and OS integration that web-tech competitors structurally cannot, while keeping the user's data in an open, portable, greppable format they fully own.
 
-This document defines the product vision, the users, the feature set shipped in **v1.0** (the original v0.1 MVP plus the post-MVP feature areas), and what remains on the roadmap. Technical design lives in [architecture.md](architecture.md); the build sequence lives in [implementation-plan.md](implementation-plan.md).
+This document defines the product vision, the users, the feature set shipped in **v1.0** (the original v0.1 MVP plus the post-MVP feature areas), and what remains on the roadmap. Technical design lives in [architecture.md](architecture.md); the build history lives in [implemented.md](implemented.md).
 
 ## 2. Problem statement
 
@@ -44,7 +44,7 @@ No tool today combines: **(a)** genuinely native macOS performance and feel, **(
 
 ### Non-goals (explicitly out of scope)
 - No proprietary storage: **no CoreData, no SwiftData, no iCloud document store.**
-- No WebViews / Electron / embedded browser in the *editing path* (Mermaid, math, code, callouts, and transclusions all render natively in the editor; the macOS Preview mode is the same native engine, read-only). *Two scoped v1.0 exceptions: the Marp slides preview, and the iOS read-only Preview (MarkdownEngine is AppKit-only), each use a `WKWebView`.*
+- No WebViews / Electron / embedded browser in the *editing path* (Mermaid, math, code, callouts, and transclusions all render natively in the editor). The read-only **Preview** and the **Marp slides** preview do use a `WKWebView` — the Preview intentionally renders through cmark-gfm for GitHub-identical output — but the live editor itself never does.
 - No real-time collaboration or hosted backend.
 - No plugin runtime in the MVP (extensibility is a deliberate later question, à la Vellum's "pure editor" stance).
 - No proprietary sync service — sync is the user's own Git remote.
@@ -70,7 +70,7 @@ Where we **diverge**: HelloNotes adds the *knowledge-graph* layer (wiki-links + 
 
 ## 7. Feature requirements
 
-Priority: **P0 = MVP**, **P1 = fast-follow**, **P2 = roadmap**. **v1.0 shipped P0–P2** across the board on macOS, plus the post-MVP feature areas in the status box (see [implementation-plan.md](implementation-plan.md) for the build sequence).
+Priority: **P0 = MVP**, **P1 = fast-follow**, **P2 = roadmap**. **v1.0 shipped P0–P2** across the board on macOS, plus the post-MVP feature areas in the status box (see [implemented.md](implemented.md) for the build history).
 
 > ### ✅ Implementation status — v1.0 (shipped)
 > **Library & files:** a **multi-collection library** (several vaults open at once) with launcher, recents, and saved library sets; **Obsidian vault import**; persistent security-scoped bookmarks; Markdown indexing; create/rename (with link rewrite)/duplicate/delete (to Trash); nested folder tree with sort + **drag-and-drop moving** + empty-folder creation; external-change detection + conflict handling; image paste → `assets/`; **smart paste** (HTML → Markdown); non-Markdown attachments (PDF/image/CSV/other) in a native **file viewer**.
@@ -91,11 +91,11 @@ Priority: **P0 = MVP**, **P1 = fast-follow**, **P2 = roadmap**. **v1.0 shipped P
 - **P2** Drag-and-drop and paste images into a configurable asset folder.
 
 ### 7.2 Editor (the core)
-- **P0** Open a note into a live TextKit 2 Markdown editor (MarkdownEngine `NativeTextViewWrapper`).
+- **P0** Open a note into a live TextKit 2 Markdown editor (`Packages/NotesEditor`).
 - **P0** Live inline formatting (bold/italic/code), headings, lists, task lists, quotes.
 - **P0** Auto-save edits back to the file (debounced), with an unsaved/saved indicator.
-- **P0** Syntax-highlighted fenced code blocks (via the HighlighterSwift bridge).
-- **P1** Inline and block **LaTeX** math (via the SwiftMath bridge).
+- **P0** Syntax-highlighted fenced code blocks (HighlighterSwift, GitHub theme).
+- **P1** Inline and block **LaTeX** math (SwiftMath, rendered to images).
 - **P1** Source ⇄ live-preview toggle; find/replace within a note.
 - **P2** Tables editing UX, footnotes, front-matter panel.
 
@@ -156,4 +156,4 @@ Three-column macOS layout:
 3. **Wiki-link create-on-miss:** ✅ *Resolved (v0.1)* — new linked notes are created in the vault root. (Configurable location is a possible later refinement.)
 4. **Extensibility:** *Open* — still holding Vellum's "pure editor" line; no plugin surface in v1.0. (AI "skills" — Markdown instruction notes in the collection — cover part of this space without a plugin runtime.)
 5. **iOS timing:** ✅ *Largely resolved* — Core/State are platform-agnostic and shared; iOS ships as a browse/preview/plain-text-edit companion. A rich iOS editor remains future work (see [unimplemented.md](unimplemented.md)).
-6. **Heading navigation & embeds:** ✅ *Resolved (v1.0, in the `Packages/NotesEditor` editor)* — scroll-to-heading works everywhere (outline, `[[Note#heading]]`, search) and `![[transclusion]]` renders inline cards; see [editor-rewrite.md](editor-rewrite.md).
+6. **Heading navigation & embeds:** ✅ *Resolved (v1.0, in the `Packages/NotesEditor` editor)* — scroll-to-heading works everywhere (outline, `[[Note#heading]]`, search) and `![[transclusion]]` renders inline cards; see [implemented.md](implemented.md).

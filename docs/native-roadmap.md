@@ -5,10 +5,16 @@ surface (App Intents, text/content APIs, macOS 26 platform expectations). Every 
 below was checked against live Apple docs — minimum-OS versions and API names are
 verified, not recalled. Execute phases in order; items within a phase are independent.*
 
-**Starting point:** HelloNotes currently uses zero system-integration surface — no
-intents, widgets, Spotlight donation, URL scheme, extensions, Handoff, tips, or state
-restoration. The editor is a real `NSTextView` on TextKit 2, which makes several
-"features" nearly free.
+**Starting point:** HelloNotes uses almost no system-integration surface yet — no App
+Intents, widgets, Spotlight *donation* (it *reads* Spotlight for full-text search, but
+doesn't publish `NoteEntity`s), URL scheme, extensions, Handoff, tips, or state
+restoration. The editor is a real `NSTextView`/`UITextView` on TextKit 2 (the in-repo
+`Packages/NotesEditor`), which makes several "features" nearly free — **Writing Tools and
+system inline predictions are already wired** (see Phase A).
+
+**Update (post editor rewrite):** the greenfield TextKit 2 editor shipped, so the
+"Writing Tools config" quick win below is **done**; the rest of this roadmap is unchanged
+— it targets system integration the app still lacks.
 
 ---
 
@@ -16,7 +22,7 @@ restoration. The editor is a real `NSTextView` on TextKit 2, which makes several
 
 | Item | API / approach | Min OS | Notes & gotchas |
 |---|---|---|---|
-| **Writing Tools config** | `NSTextView.writingToolsBehavior = .complete`; `allowedWritingToolsResultOptions = [.plainText]` | macOS 15.1 | ~90% free because the editor is native TextKit 2. `.plainText` is **required** — otherwise rewrites return rich text and corrupt Markdown syntax. Pause the syntax highlighter in `textViewWritingToolsWillBegin/DidEnd` and restyle once on end. Apple has a known stale-accept bug; handle the session lifecycle in the editor's Writing Tools coordinator (`Packages/NotesEditor`). |
+| **Writing Tools config** ✅ **(done)** | `NSTextView.writingToolsBehavior = .complete`; `allowedWritingToolsResultOptions = [.plainText]` | macOS 15.1 | **Shipped** in the editor rewrite (`MarkdownTextView.swift`), alongside `inlinePredictionType = .default`. `.plainText` is used so rewrites can't return rich text and corrupt Markdown; restyling pauses during an external text session. |
 | **Continuity Camera routing** | `NSTextView` context menu already offers "Insert from iPhone → Scan Documents" | works today | Only work needed: route the incoming image through the existing paste-to-attachment path (save to collection's attachments folder + insert `![[…]]`) instead of embedding rich text. |
 | **Print (⌘P)** | Render note into an off-screen `NSTextView`/`NSPrintOperation` | any | PDF "export via print panel" falls out for free. Wire to `CommandGroup(replacing: .printItem)`. |
 | **Services menu** | `NSServices` Info.plist entry + `NSApp.servicesProvider`: "New HelloNotes Note from Selection" | any | Cheap system-wide capture on Mac; covers most of what a share extension would give us (see Skip list). |

@@ -37,7 +37,7 @@ nonisolated public struct EditorTheme: @unchecked Sendable {
     let monoSmall: PlatformFont
     let headings: [PlatformFont]        // levels 1…6
     /// Near-zero-size font used to conceal syntax markers (same-length
-    /// attribute transform; see docs/editor-rewrite.md).
+    /// attribute transform; see docs/implemented.md).
     let concealed: PlatformFont
 
     // Colors.

@@ -9,7 +9,7 @@
 //  GFMRender        GitHub-identical Markdown → HTML via cmark-gfm (the same
 //                   engine GitHub uses), verified against the GFM spec corpus.
 //
-//  Design rationale: docs/editor-rewrite.md at the repository root.
+//  Design rationale: docs/implemented.md at the repository root.
 //
 import PackageDescription
 
