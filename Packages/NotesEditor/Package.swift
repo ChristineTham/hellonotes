@@ -6,6 +6,8 @@
 //                   and the pure style specification. Foundation-only,
 //                   Sendable, fully unit-tested.
 //  MarkdownEditor   the TextKit 2 editor UI (AppKit + UIKit + SwiftUI).
+//  GFMRender        GitHub-identical Markdown → HTML via cmark-gfm (the same
+//                   engine GitHub uses), verified against the GFM spec corpus.
 //
 //  Design rationale: docs/editor-rewrite.md at the repository root.
 //
@@ -17,6 +19,10 @@ let package = Package(
     products: [
         .library(name: "MarkdownCore", targets: ["MarkdownCore"]),
         .library(name: "MarkdownEditor", targets: ["MarkdownEditor"]),
+        .library(name: "GFMRender", targets: ["GFMRender"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-cmark.git", branch: "gfm"),
     ],
     targets: [
         .target(
@@ -31,6 +37,14 @@ let package = Package(
                 .defaultIsolation(MainActor.self),
             ]
         ),
+        .target(
+            name: "GFMRender",
+            dependencies: [
+                .product(name: "cmark-gfm", package: "swift-cmark"),
+                .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
+            ],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
         .testTarget(
             name: "MarkdownCoreTests",
             dependencies: ["MarkdownCore"],
@@ -39,6 +53,12 @@ let package = Package(
         .testTarget(
             name: "MarkdownEditorTests",
             dependencies: ["MarkdownEditor"],
+            swiftSettings: [.swiftLanguageMode(.v6)]
+        ),
+        .testTarget(
+            name: "GFMRenderTests",
+            dependencies: ["GFMRender"],
+            resources: [.copy("spec.txt")],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
     ]
