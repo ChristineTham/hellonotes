@@ -56,7 +56,9 @@ struct GFMWebView: UIViewRepresentable {
 extension GFMWebView {
     static func makeWebView() -> WKWebView {
         let config = WKWebViewConfiguration()
-        config.defaultWebpagePreferences.allowsContentJavaScript = false
+        // JS is needed only for the bundled highlight.js; any `<script>` in the
+        // note itself is already escaped by cmark-gfm's tagfilter.
+        config.defaultWebpagePreferences.allowsContentJavaScript = true
         let web = WKWebView(frame: .zero, configuration: config)
         #if canImport(AppKit)
         web.setValue(false, forKey: "drawsBackground")

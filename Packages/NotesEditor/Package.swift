@@ -43,7 +43,12 @@ let package = Package(
                 .product(name: "cmark-gfm", package: "swift-cmark"),
                 .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
             ],
-            resources: [.copy("github-markdown.css")],
+            resources: [
+                .copy("github-markdown.css"),
+                .copy("highlight.min.js"),
+                .copy("hljs-github.css"),
+                .copy("hljs-github-dark.css"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
         .testTarget(
