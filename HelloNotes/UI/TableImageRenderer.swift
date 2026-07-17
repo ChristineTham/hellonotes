@@ -17,8 +17,9 @@ import AppKit
 @MainActor
 enum TableImageRenderer {
     private enum Align { case left, center, right }
-    private static let cellPadX: CGFloat = 10
-    private static let cellPadY: CGFloat = 5
+    // GitHub's github-markdown-css: `th, td { padding: 6px 13px }`.
+    private static let cellPadX: CGFloat = 13
+    private static let cellPadY: CGFloat = 6
 
     static func image(source: String, maxWidth: CGFloat, fontSize: CGFloat = 15, isDark: Bool) -> NSImage? {
         let lines = source.components(separatedBy: "\n").filter { $0.contains("|") }
@@ -31,9 +32,16 @@ enum TableImageRenderer {
         let columns = max(rows[0].count, aligns.count)
         guard columns > 0 else { return nil }
 
-        let text: NSColor = isDark ? NSColor(white: 0.92, alpha: 1) : NSColor(white: 0.1, alpha: 1)
-        let grid: NSColor = isDark ? NSColor(white: 1, alpha: 0.18) : NSColor(white: 0, alpha: 0.18)
-        let headerBG: NSColor = isDark ? NSColor(white: 1, alpha: 0.06) : NSColor(white: 0, alpha: 0.05)
+        // Exact GitHub github-markdown-css table palette, so the editor's grid
+        // matches the Preview's <table> in both appearances:
+        //   fg   --fgColor-default   #1f2328 / #f0f6fc
+        //   grid --borderColor-default #d1d9e0 / #3d444d
+        //   zebra --bgColor-muted    #f6f8fa / #151b23  (tr:nth-child(2n))
+        // GitHub has no header background band — the header is just semibold and
+        // sits on the default (canvas) row like every odd row.
+        let text: NSColor = isDark ? .hexColor(0xf0f6fc) : .hexColor(0x1f2328)
+        let grid: NSColor = isDark ? .hexColor(0x3d444d) : .hexColor(0xd1d9e0)
+        let zebraBG: NSColor = isDark ? .hexColor(0x151b23) : .hexColor(0xf6f8fa)
         let body = NSFont.systemFont(ofSize: fontSize)
         let bold = NSFont.boldSystemFont(ofSize: fontSize)
 
@@ -63,9 +71,19 @@ enum TableImageRenderer {
         defer { image.unlockFocus() }
         guard let ctx = NSGraphicsContext.current?.cgContext else { return image }
 
-        // Header background band.
-        headerBG.setFill()
-        NSBezierPath(rect: NSRect(x: 0, y: totalH - rowH[0], width: totalW, height: rowH[0])).fill()
+        // Zebra striping: GitHub fills `tr:nth-child(2n)` with --bgColor-muted.
+        // Counting the header as child 1, the striped rows are the 2nd, 4th…
+        // children — i.e. odd indices in `bodyRows` ([header, data1, data2…]).
+        // Odd rows (header, data2, …) keep the default canvas background, which
+        // here is left transparent so the grid sits on the editor's own canvas.
+        zebraBG.setFill()
+        var stripeY = totalH
+        for (r, _) in bodyRows.enumerated() {
+            stripeY -= rowH[r]
+            if r % 2 == 1 {
+                NSBezierPath(rect: NSRect(x: 0, y: stripeY, width: totalW, height: rowH[r])).fill()
+            }
+        }
 
         // Cell text.
         var y = totalH
@@ -119,6 +137,16 @@ enum TableImageRenderer {
         if left && right { return .center }
         if right { return .right }
         return .left
+    }
+}
+
+private extension NSColor {
+    /// An opaque sRGB colour from a 0xRRGGBB literal (for GitHub's exact
+    /// hex palette). sRGB so it matches the WKWebView Preview's colour space.
+    static func hexColor(_ rgb: Int) -> NSColor {
+        NSColor(srgbRed: CGFloat((rgb >> 16) & 0xFF) / 255,
+                green: CGFloat((rgb >> 8) & 0xFF) / 255,
+                blue: CGFloat(rgb & 0xFF) / 255, alpha: 1)
     }
 }
 #endif
