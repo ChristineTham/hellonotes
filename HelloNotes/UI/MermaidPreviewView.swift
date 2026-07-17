@@ -10,7 +10,7 @@ import SwiftUI
 import BeautifulMermaid
 
 /// A sheet that renders the note's ```mermaid blocks as native images (via
-/// BeautifulMermaid — no WebView). MarkdownEngine has no inline code-block
+/// BeautifulMermaid — no WebView). The editor has no inline code-block
 /// render hook, so diagrams preview here rather than inside the editor.
 struct MermaidPreviewView: View {
     let sources: [String]

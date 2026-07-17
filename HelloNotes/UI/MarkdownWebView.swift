@@ -4,7 +4,7 @@
 //
 //  Created by Chris Tham on 13/7/2026.
 //
-//  iOS read-only Markdown preview. MarkdownEngine is macOS-only (AppKit /
+//  iOS read-only Markdown preview. the live editor is macOS-only (AppKit /
 //  TextKit 2), so the mobile Preview renders the note to styled HTML with the
 //  shared, cross-platform `MarkdownExport` and shows it in a WKWebView.
 //

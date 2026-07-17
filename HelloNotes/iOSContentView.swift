@@ -15,7 +15,7 @@ import UniformTypeIdentifiers
 /// editor. On iPad landscape all three columns show at once (like macOS); on
 /// iPad portrait the sidebar tucks behind a toggle; on iPhone it collapses to a
 /// push stack. Shares `Note`, `Library`, `Collection`, `EditorModel`, and
-/// `CollectionSearchModel` with macOS. MarkdownEngine is macOS-only
+/// `CollectionSearchModel` with macOS. the live editor is macOS-only
 /// (AppKit/TextKit 2), so the mobile editor is a plain-text `TextEditor` backed
 /// by the same autosave logic.
 struct iOSContentView: View {

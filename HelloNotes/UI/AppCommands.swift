@@ -15,7 +15,7 @@ import SwiftUI
 import AppKit
 
 /// A Markdown formatting command the Format menu can send to the focused
-/// editor (routed to MarkdownEngine through its notification bus).
+/// editor (routed to the editor through its notification bus).
 enum FormatAction {
     case bold, italic, strikethrough, highlight, inlineCode
     case blockquote, unorderedList, orderedList

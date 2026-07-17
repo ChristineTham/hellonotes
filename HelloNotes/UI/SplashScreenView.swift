@@ -97,7 +97,7 @@ struct SplashScreenView: View {
                 Group {
                     Text("\(BuildInfo.versionLine)\(BuildInfo.buildDate.isEmpty ? "" : "  ·  Built \(BuildInfo.buildDate)")")
                     Text("Created by Chris Tham")
-                    Text("Made with SwiftUI, MarkdownEngine & SwiftGitX")
+                    Text("Made with SwiftUI, TextKit 2 & SwiftGitX")
                         .foregroundStyle(.white.opacity(0.65))
                     Text("© \(BuildInfo.copyrightYear) Hello Tham. All rights reserved.")
                         .foregroundStyle(.white.opacity(0.65))

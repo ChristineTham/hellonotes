@@ -24,7 +24,7 @@ nonisolated struct FrontMatterField: Hashable {
 /// Pure, UI-agnostic Markdown parsing helpers (Core layer).
 ///
 /// Wiki-links and hashtags are not part of GitHub-Flavored Markdown, so they
-/// are extracted with regular expressions that mirror MarkdownEngine's own
+/// are extracted with regular expressions that mirror the editor's own
 /// wiki-link storage pattern. Headings come from Apple's `swift-markdown` AST.
 ///
 /// `nonisolated` so these pure functions can run off the main actor (the app
@@ -33,7 +33,7 @@ nonisolated struct FrontMatterField: Hashable {
 nonisolated enum MarkdownParsing {
 
     /// Matches `[[Target]]` and `[[Target|Alias]]`, capturing the target in
-    /// group 1. Mirrors MarkdownEngine's `WikiLinkService.storagePattern`
+    /// group 1. Mirrors the wiki-link storage pattern
     /// (an unescaped `!` prefix — an image — is excluded).
     private static let wikiLinkRegex = try! NSRegularExpression(
         pattern: #"(?<!!)\[\[([^\|\]\r\n]*)(?:\|[^\]\r\n]+)?\]\]"#

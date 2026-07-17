@@ -9,10 +9,10 @@ import SwiftUI
 
 /// How the note editor presents the open note. Shared by both platforms,
 /// though not every case is offered everywhere: macOS starts in ``edit`` (the
-/// live WYSIWYG rendering), while iOS — which has no MarkdownEngine — starts in
+/// live WYSIWYG rendering), while iOS — which has no live editor — starts in
 /// ``preview`` and offers only the render/source/split trio.
 enum EditorMode: String, CaseIterable, Identifiable {
-    /// Live, editable WYSIWYG rendering (MarkdownEngine). macOS only.
+    /// Live, editable WYSIWYG rendering. macOS only.
     case edit
     /// Read-only rendering — the note as it reads, with no caret.
     case preview

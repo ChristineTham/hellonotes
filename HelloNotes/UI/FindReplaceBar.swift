@@ -8,7 +8,7 @@
 #if os(macOS)
 import SwiftUI
 
-/// A find/replace bar shown above the editor. It drives MarkdownEngine's find
+/// A find/replace bar shown above the editor. It drives the editor's find
 /// highlighting and replace handlers entirely through the notification bus
 /// (`hnEditorFindQuery` / `hnEditorReplace*`), so it holds no reference to the
 /// text view — it just posts queries and reflects the match count the engine
