@@ -360,6 +360,35 @@ import AppKit
     }
     #endif
 
+    #if canImport(AppKit)
+    /// The live editor's GFM styling comes from cmark-gfm, so it must handle the
+    /// CommonMark emphasis edge cases the simplified parser can get wrong.
+    @Test func gfmLiveStyleEmphasisConformance() {
+        func content(_ md: String, role: String) -> [String] {
+            let ns = md as NSString
+            return GFMLiveStyle.runs(ns).compactMap { r in
+                "\(r.role)" == role ? ns.substring(with: r.range) : nil
+            }
+        }
+        // Nested strong-in-emph and emph-in-strong.
+        #expect(content("*foo**bar**baz*", role: "strong") == ["bar"])
+        #expect(content("**foo*bar*baz**", role: "emphasis") == ["bar"])
+        // Intraword emphasis with `*` works; with `_` it does not (CommonMark).
+        #expect(content("foo*bar*baz", role: "emphasis") == ["bar"])
+        #expect(content("foo_bar_baz", role: "emphasis") == [])
+        // A space after the opener means it is NOT emphasis.
+        #expect(content("a * foo bar*", role: "emphasis") == [])
+        // `***x***` is strong+emph (both cover the inner `x`; cmark reports the
+        // two levels with overlapping ranges, so the inner delimiter isn't
+        // perfectly split — the important thing is it renders bold+italic).
+        #expect(content("***x***", role: "strong").first?.contains("x") == true)
+        #expect(content("***x***", role: "emphasis").first?.contains("x") == true)
+        // Strikethrough and code coexist.
+        #expect(content("~~a~~ and `b`", role: "strikethrough") == ["a"])
+        #expect(content("~~a~~ and `b`", role: "inlineCode") == ["b"])
+    }
+    #endif
+
     // MARK: - Code highlighting
 
     private struct MockHighlighter: CodeHighlighting {
